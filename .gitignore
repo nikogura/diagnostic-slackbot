@@ -1,0 +1,55 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+diagnostic-slackbot
+mcp-server
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reports and logs
+*.pdf
+*.log
+reports/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Generated files
+dist/

@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+*.o
+*.a
+*.so
+bin/
+dist/
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+docs/MODSECURITY-INVESTIGATION-PROMPT.md
+docs/TROUBLESHOOTING_MIGRATIONS.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Test files
+*_test.go
+testdata/
+
+# Temporary files
+*.log
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db

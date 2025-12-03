@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "diagnostic": {
+      "command": "/app/mcp-server",
+      "args": [],
+      "env": {
+        "LOKI_ENDPOINT": "${LOKI_ENDPOINT}"
+      }
+    }
+  }
+}
