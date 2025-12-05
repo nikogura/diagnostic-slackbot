@@ -83,8 +83,8 @@ jobs:
         with:
           name: binaries
           path: |
-            diagnostic-slackbot
-            mcp-server
+            bin/diagnostic-slackbot
+            bin/mcp-server
 
   docker:
     name: Build and Push Docker Image

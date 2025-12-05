@@ -11,9 +11,11 @@ lint:
 test:
 	go test -v -race -cover ./...
 
-# Build compiles the bot binary
+# Build compiles both binaries
 build:
+	mkdir -p bin
 	go build -o bin/diagnostic-slackbot ./cmd/bot
+	go build -o bin/mcp-server ./cmd/mcp-server
 
 # Clean removes build artifacts
 clean:
