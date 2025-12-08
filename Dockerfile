@@ -21,7 +21,7 @@ RUN go build -o /bin/diagnostic-slackbot ./cmd/bot
 RUN go build -o /bin/mcp-server ./cmd/mcp-server
 
 # Final stage
-FROM alpine:3.19
+FROM alpine:3.23
 
 # Install runtime dependencies including LaTeX, Pandoc, and Claude Code
 RUN apk add --no-cache \
