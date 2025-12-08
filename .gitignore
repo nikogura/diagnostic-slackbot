@@ -1,11 +1,11 @@
-# Binaries
+# Binaries (in root only)
 bin/
 *.exe
 *.dll
 *.so
 *.dylib
-diagnostic-slackbot
-mcp-server
+/diagnostic-slackbot
+/mcp-server
 
 # Test binary, built with `go test -c`
 *.test
