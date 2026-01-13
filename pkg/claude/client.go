@@ -22,13 +22,20 @@ const (
 type Client struct {
 	client *anthropic.Client
 	logger *slog.Logger
+	model  string
 }
 
 // NewClient creates a new Claude API client.
-func NewClient(apiKey string, logger *slog.Logger) (result *Client) {
+func NewClient(apiKey string, model string, logger *slog.Logger) (result *Client) {
+	// Use default model if not specified
+	if model == "" {
+		model = ModelSonnet45
+	}
+
 	result = &Client{
 		client: anthropic.NewClient(apiKey),
 		logger: logger,
+		model:  model,
 	}
 
 	return result
@@ -67,7 +74,7 @@ func (c *Client) SendMessage(ctx context.Context, req MessageRequest) (result Me
 	}
 
 	request := anthropic.MessagesRequest{
-		Model:     ModelSonnet45,
+		Model:     anthropic.Model(c.model),
 		Messages:  req.Messages,
 		MaxTokens: req.MaxTokens,
 		System:    req.SystemPrompt,

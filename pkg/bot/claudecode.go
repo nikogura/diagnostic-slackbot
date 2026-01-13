@@ -15,12 +15,19 @@ import (
 // ClaudeCodeRunner handles running Claude Code CLI for investigations.
 type ClaudeCodeRunner struct {
 	logger *slog.Logger
+	model  string
 }
 
 // NewClaudeCodeRunner creates a new Claude Code runner.
-func NewClaudeCodeRunner(logger *slog.Logger) (result *ClaudeCodeRunner) {
+func NewClaudeCodeRunner(model string, logger *slog.Logger) (result *ClaudeCodeRunner) {
+	// Use default model if not specified
+	if model == "" {
+		model = "claude-sonnet-4-5-20250929"
+	}
+
 	result = &ClaudeCodeRunner{
 		logger: logger,
+		model:  model,
 	}
 
 	return result
@@ -40,6 +47,7 @@ func (r *ClaudeCodeRunner) RunInvestigation(ctx context.Context, template *inves
 	cmd := exec.CommandContext(ctx, "claude",
 		"--print",
 		"--dangerously-skip-permissions",
+		"--model", r.model,
 		"--",
 		prompt,
 	)

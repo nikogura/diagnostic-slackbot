@@ -28,6 +28,7 @@ func main() {
 		InvestigationDir: getEnv("INVESTIGATION_DIR", "./investigations"),
 		FileRetention:    parseFileRetention(logger),
 		GitHubToken:      getEnv("GITHUB_TOKEN", ""),
+		ClaudeModel:      getEnv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929"),
 	}
 
 	// Validate required configuration

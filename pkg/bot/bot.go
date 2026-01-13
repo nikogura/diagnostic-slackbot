@@ -47,6 +47,7 @@ type Config struct {
 	InvestigationDir string
 	FileRetention    time.Duration // How long to keep generated files (0 = use default)
 	GitHubToken      string        // GitHub personal access token for repository access
+	ClaudeModel      string        // Claude model to use (e.g., "claude-sonnet-4-5-20250929")
 }
 
 // NewBot creates a new diagnostic bot.
@@ -78,7 +79,7 @@ func NewBot(cfg Config, logger *slog.Logger) (result *Bot, err error) {
 	)
 
 	// Create Claude Code runner
-	claudeCodeRunner := NewClaudeCodeRunner(logger)
+	claudeCodeRunner := NewClaudeCodeRunner(cfg.ClaudeModel, logger)
 
 	// Get bot user ID
 	authResp, err = slackClient.AuthTest()
@@ -137,8 +138,7 @@ func (b *Bot) handleSocketMode(ctx context.Context) {
 			return
 
 		case evt := <-b.socketClient.Events:
-			//nolint:exhaustive // Only handling core event types, others are ignored
-			switch evt.Type {
+			switch evt.Type { //nolint:exhaustive // Only handling core event types, others are ignored
 			case socketmode.EventTypeEventsAPI:
 				eventsAPI, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
