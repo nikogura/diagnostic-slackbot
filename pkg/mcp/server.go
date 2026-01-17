@@ -20,17 +20,19 @@ import (
 
 // Server implements the MCP (Model Context Protocol) server.
 type Server struct {
-	lokiClient   *k8s.LokiClient
-	githubClient *github.Client
-	dbClient     *DatabaseClient
-	logger       *slog.Logger
-	companyName  string
+	lokiClient    *k8s.LokiClient
+	githubClient  *github.Client
+	dbClient      *DatabaseClient
+	grafanaClient *GrafanaClient
+	logger        *slog.Logger
+	companyName   string
 }
 
 // NewServer creates a new MCP server.
 func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logger) (result *Server) {
 	var githubClient *github.Client
 	var dbClient *DatabaseClient
+	var grafanaClient *GrafanaClient
 
 	if githubToken != "" {
 		ts := oauth2.StaticTokenSource(
@@ -57,6 +59,22 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 		logger.Info("DATABASE_URL not provided - database tools will be unavailable")
 	}
 
+	// Initialize Grafana client if configured
+	grafanaURL := os.Getenv("GRAFANA_URL")
+	grafanaAPIKey := os.Getenv("GRAFANA_API_KEY")
+	if grafanaURL != "" && grafanaAPIKey != "" {
+		var err error
+		grafanaClient, err = NewGrafanaClient(grafanaURL, grafanaAPIKey, logger)
+		if err != nil {
+			logger.Warn("Grafana client initialization failed - Grafana tools will be unavailable",
+				slog.String("error", err.Error()))
+		} else {
+			logger.Info("Grafana client initialized - Grafana dashboard tools available")
+		}
+	} else {
+		logger.Info("GRAFANA_URL or GRAFANA_API_KEY not provided - Grafana tools will be unavailable")
+	}
+
 	// Get company name from environment, default to "Company"
 	companyName := os.Getenv("COMPANY_NAME")
 	if companyName == "" {
@@ -64,11 +82,12 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 	}
 
 	result = &Server{
-		lokiClient:   lokiClient,
-		githubClient: githubClient,
-		dbClient:     dbClient,
-		logger:       logger,
-		companyName:  companyName,
+		lokiClient:    lokiClient,
+		githubClient:  githubClient,
+		dbClient:      dbClient,
+		grafanaClient: grafanaClient,
+		logger:        logger,
+		companyName:   companyName,
 	}
 
 	return result
@@ -383,6 +402,185 @@ func getDatabaseTools() (result []MCPTool) {
 	return result
 }
 
+// getGrafanaTools returns Grafana dashboard management tools.
+func getGrafanaTools() (result []MCPTool) {
+	result = append(result, getGrafanaReadTools()...)
+	result = append(result, getGrafanaWriteTools()...)
+	return result
+}
+
+// getGrafanaReadTools returns Grafana tools for reading/listing dashboards.
+func getGrafanaReadTools() (result []MCPTool) {
+	result = []MCPTool{
+		{
+			Name:        "grafana_list_dashboards",
+			Description: "List all Grafana dashboards the user has access to",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			Name:        "grafana_get_dashboard",
+			Description: "Get a specific Grafana dashboard by UID",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"uid": map[string]interface{}{
+						"type":        "string",
+						"description": "Dashboard UID",
+					},
+				},
+				"required": []string{"uid"},
+			},
+		},
+	}
+	return result
+}
+
+// getGrafanaWriteTools returns Grafana tools for creating/updating/deleting dashboards.
+func getGrafanaWriteTools() (result []MCPTool) {
+	result = append(result, getGrafanaCreateDashboardTool())
+	result = append(result, getGrafanaModifyTools()...)
+	return result
+}
+
+// getGrafanaCreateDashboardTool returns the tool definition for creating dashboards.
+func getGrafanaCreateDashboardTool() (tool MCPTool) {
+	tool = MCPTool{
+		Name:        "grafana_create_dashboard",
+		Description: "Create a new Grafana dashboard from queries. Supports SQL (PostgreSQL/MySQL), Prometheus (PromQL), and CloudWatch metrics. Ideal for CEO-level business and operational metrics dashboards.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"title": map[string]interface{}{
+					"type":        "string",
+					"description": "Dashboard title",
+				},
+				"panels": map[string]interface{}{
+					"type":        "array",
+					"description": "Array of panel configurations",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"title": map[string]interface{}{
+								"type":        "string",
+								"description": "Panel title",
+							},
+							"query": map[string]interface{}{
+								"type":        "string",
+								"description": "Query for the panel (SQL, PromQL, or CloudWatch query)",
+							},
+							"sql": map[string]interface{}{
+								"type":        "string",
+								"description": "SQL query (deprecated, use 'query' instead)",
+							},
+							"panelType": map[string]interface{}{
+								"type":        "string",
+								"description": "Panel visualization type",
+								"enum":        []string{"stat", "timeseries", "table", "piechart", "bargauge", "gauge", "heatmap"},
+							},
+							"datasourceType": map[string]interface{}{
+								"type":        "string",
+								"description": "Type of datasource (postgres, mysql, prometheus, cloudwatch)",
+								"enum":        []string{"postgres", "mysql", "prometheus", "cloudwatch"},
+								"default":     "postgres",
+							},
+							"datasourceUID": map[string]interface{}{
+								"type":        "string",
+								"description": "UID of the specific datasource",
+								"default":     "postgres-main",
+							},
+							"description": map[string]interface{}{
+								"type":        "string",
+								"description": "Optional panel description",
+							},
+							"legend": map[string]interface{}{
+								"type":        "string",
+								"description": "Legend format for Prometheus queries (e.g., '{{instance}}')",
+							},
+							"region": map[string]interface{}{
+								"type":        "string",
+								"description": "AWS region for CloudWatch metrics (e.g., 'us-east-1')",
+							},
+							"namespace": map[string]interface{}{
+								"type":        "string",
+								"description": "CloudWatch namespace (e.g., 'AWS/EC2', 'AWS/RDS')",
+							},
+							"metricName": map[string]interface{}{
+								"type":        "string",
+								"description": "CloudWatch metric name (e.g., 'CPUUtilization')",
+							},
+							"statistics": map[string]interface{}{
+								"type":        "array",
+								"description": "CloudWatch statistics to fetch (e.g., ['Average', 'Maximum'])",
+								"items": map[string]interface{}{
+									"type": "string",
+									"enum": []string{"Average", "Sum", "Maximum", "Minimum", "SampleCount"},
+								},
+							},
+							"dimensions": map[string]interface{}{
+								"type":        "object",
+								"description": "CloudWatch dimensions as key-value pairs (e.g., {'InstanceId': 'i-123'})",
+								"additionalProperties": map[string]interface{}{
+									"type": "string",
+								},
+							},
+						},
+						"required": []string{"title", "panelType"},
+					},
+				},
+			},
+			"required": []string{"title", "panels"},
+		},
+	}
+	return tool
+}
+
+// getGrafanaModifyTools returns Grafana tools for updating/deleting dashboards.
+func getGrafanaModifyTools() (result []MCPTool) {
+	result = []MCPTool{
+		{
+			Name:        "grafana_update_dashboard",
+			Description: "Update an existing Grafana dashboard",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"uid": map[string]interface{}{
+						"type":        "string",
+						"description": "Dashboard UID to update",
+					},
+					"dashboard": map[string]interface{}{
+						"type":        "object",
+						"description": "Complete dashboard JSON object",
+					},
+					"message": map[string]interface{}{
+						"type":        "string",
+						"description": "Update message/reason",
+					},
+				},
+				"required": []string{"uid", "dashboard"},
+			},
+		},
+		{
+			Name:        "grafana_delete_dashboard",
+			Description: "Delete a Grafana dashboard",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"uid": map[string]interface{}{
+						"type":        "string",
+						"description": "Dashboard UID to delete",
+					},
+				},
+				"required": []string{"uid"},
+			},
+		},
+	}
+
+	return result
+}
+
 // getToolDefinitions returns the list of available MCP tool definitions.
 func getToolDefinitions() (result []MCPTool) {
 	result = append(result, getLokiTools()...)
@@ -390,6 +588,7 @@ func getToolDefinitions() (result []MCPTool) {
 	result = append(result, getGitHubTools()...)
 	result = append(result, getECRTools()...)
 	result = append(result, getDatabaseTools()...)
+	result = append(result, getGrafanaTools()...)
 
 	return result
 }
@@ -450,6 +649,21 @@ func (s *Server) handleToolCall(ctx context.Context, req MCPRequest) {
 
 	case "database_query":
 		result, err = s.executeDatabaseQuery(ctx, params.Arguments)
+
+	case "grafana_list_dashboards":
+		result, err = s.executeGrafanaListDashboards(ctx, params.Arguments)
+
+	case "grafana_get_dashboard":
+		result, err = s.executeGrafanaGetDashboard(ctx, params.Arguments)
+
+	case "grafana_create_dashboard":
+		result, err = s.executeGrafanaCreateDashboard(ctx, params.Arguments)
+
+	case "grafana_update_dashboard":
+		result, err = s.executeGrafanaUpdateDashboard(ctx, params.Arguments)
+
+	case "grafana_delete_dashboard":
+		result, err = s.executeGrafanaDeleteDashboard(ctx, params.Arguments)
 
 	default:
 		s.sendError(req.ID, fmt.Sprintf("unknown tool: %s", params.Name))
@@ -795,4 +1009,232 @@ func (s *Server) sendError(id interface{}, message string) {
 
 	data, _ := json.Marshal(response)
 	fmt.Println(string(data))
+}
+
+// executeGrafanaListDashboards lists all Grafana dashboards.
+func (s *Server) executeGrafanaListDashboards(ctx context.Context, _ map[string]interface{}) (result string, err error) {
+	if s.grafanaClient == nil {
+		err = errors.New("grafana access not configured (GRAFANA_URL or GRAFANA_API_KEY not set)")
+		return result, err
+	}
+
+	var dashboards []DashboardSearchResponse
+	dashboards, err = s.grafanaClient.ListDashboards(ctx)
+	if err != nil {
+		return result, err
+	}
+
+	// Format the result as JSON
+	var resultBytes []byte
+	resultBytes, err = json.MarshalIndent(dashboards, "", "  ")
+	if err != nil {
+		err = fmt.Errorf("formatting dashboard list: %w", err)
+		return result, err
+	}
+
+	result = string(resultBytes)
+	return result, err
+}
+
+// executeGrafanaGetDashboard retrieves a specific dashboard.
+func (s *Server) executeGrafanaGetDashboard(ctx context.Context, args map[string]interface{}) (result string, err error) {
+	if s.grafanaClient == nil {
+		err = errors.New("grafana access not configured (GRAFANA_URL or GRAFANA_API_KEY not set)")
+		return result, err
+	}
+
+	uid, _ := args["uid"].(string)
+	if uid == "" {
+		err = errors.New("uid parameter is required")
+		return result, err
+	}
+
+	var dashboard *Dashboard
+	dashboard, err = s.grafanaClient.GetDashboard(ctx, uid)
+	if err != nil {
+		return result, err
+	}
+
+	// Format the result as JSON
+	var resultBytes []byte
+	resultBytes, err = json.MarshalIndent(dashboard, "", "  ")
+	if err != nil {
+		err = fmt.Errorf("formatting dashboard: %w", err)
+		return result, err
+	}
+
+	result = string(resultBytes)
+	return result, err
+}
+
+// parsePanelConfigs parses raw panel data into PanelQueryConfig structs.
+func (s *Server) parsePanelConfigs(panelsRaw []interface{}) (panels []PanelQueryConfig, err error) {
+	for _, panelRaw := range panelsRaw {
+		panelMap, panelOk := panelRaw.(map[string]interface{})
+		if !panelOk {
+			err = errors.New("each panel must be an object")
+			return panels, err
+		}
+
+		panel := s.parseSinglePanelConfig(panelMap)
+		panels = append(panels, panel)
+	}
+	return panels, err
+}
+
+// parseSinglePanelConfig parses a single panel configuration.
+func (s *Server) parseSinglePanelConfig(panelMap map[string]interface{}) (panel PanelQueryConfig) {
+	panel.Title, _ = panelMap["title"].(string)
+	panel.PanelType, _ = panelMap["panelType"].(string)
+	panel.DatasourceUID, _ = panelMap["datasourceUID"].(string)
+
+	// Support both 'query' and 'sql' fields for backward compatibility
+	panel.Query, _ = panelMap["query"].(string)
+	if panel.Query == "" {
+		panel.Query, _ = panelMap["sql"].(string) // Fallback to old field
+	}
+
+	// Determine datasource type (default to postgres for backward compatibility)
+	panel.DatasourceType, _ = panelMap["datasourceType"].(string)
+	if panel.DatasourceType == "" && panel.Query != "" {
+		panel.DatasourceType = "postgres" // Default for backward compatibility
+	}
+
+	// Parse optional fields for different datasource types
+	panel.Legend, _ = panelMap["legend"].(string)
+	panel.Region, _ = panelMap["region"].(string)
+	panel.Namespace, _ = panelMap["namespace"].(string)
+	panel.MetricName, _ = panelMap["metricName"].(string)
+
+	// Parse statistics array for CloudWatch
+	if statsRaw, statsOk := panelMap["statistics"].([]interface{}); statsOk {
+		for _, stat := range statsRaw {
+			if statStr, statOk := stat.(string); statOk {
+				panel.Statistics = append(panel.Statistics, statStr)
+			}
+		}
+	}
+
+	// Parse dimensions map for CloudWatch
+	panel.Dimensions = make(map[string]string)
+	if dimRaw, dimOk := panelMap["dimensions"].(map[string]interface{}); dimOk {
+		for k, v := range dimRaw {
+			if vStr, vOk := v.(string); vOk {
+				panel.Dimensions[k] = vStr
+			}
+		}
+	}
+
+	return panel
+}
+
+// executeGrafanaCreateDashboard creates a new dashboard from queries (SQL, PromQL, CloudWatch).
+func (s *Server) executeGrafanaCreateDashboard(ctx context.Context, args map[string]interface{}) (result string, err error) {
+	if s.grafanaClient == nil {
+		err = errors.New("grafana access not configured (GRAFANA_URL or GRAFANA_API_KEY not set)")
+		return result, err
+	}
+
+	title, _ := args["title"].(string)
+	if title == "" {
+		err = errors.New("title parameter is required")
+		return result, err
+	}
+
+	// Parse panels array
+	panelsRaw, ok := args["panels"].([]interface{})
+	if !ok || len(panelsRaw) == 0 {
+		err = errors.New("panels parameter is required and must be a non-empty array")
+		return result, err
+	}
+
+	// Parse panels into PanelQueryConfig for multi-datasource support
+	var panels []PanelQueryConfig
+	panels, err = s.parsePanelConfigs(panelsRaw)
+	if err != nil {
+		return result, err
+	}
+
+	// Create the dashboard with multi-datasource support
+	var uid string
+	uid, err = s.grafanaClient.CreateDashboardFromQueries(ctx, title, panels)
+	if err != nil {
+		return result, err
+	}
+
+	result = fmt.Sprintf("Successfully created dashboard '%s' with UID: %s\n\nDashboard URL: %s/d/%s/%s",
+		title, uid, s.grafanaClient.baseURL, uid, strings.ReplaceAll(strings.ToLower(title), " ", "-"))
+	return result, err
+}
+
+// executeGrafanaUpdateDashboard updates an existing dashboard.
+func (s *Server) executeGrafanaUpdateDashboard(ctx context.Context, args map[string]interface{}) (result string, err error) {
+	if s.grafanaClient == nil {
+		err = errors.New("grafana access not configured (GRAFANA_URL or GRAFANA_API_KEY not set)")
+		return result, err
+	}
+
+	uid, _ := args["uid"].(string)
+	if uid == "" {
+		err = errors.New("uid parameter is required")
+		return result, err
+	}
+
+	dashboardRaw, ok := args["dashboard"].(map[string]interface{})
+	if !ok {
+		err = errors.New("dashboard parameter is required and must be an object")
+		return result, err
+	}
+
+	message, _ := args["message"].(string)
+	if message == "" {
+		message = "Updated via MCP"
+	}
+
+	// Convert the dashboard map to Dashboard struct
+	var dashboardBytes []byte
+	dashboardBytes, err = json.Marshal(dashboardRaw)
+	if err != nil {
+		err = fmt.Errorf("marshaling dashboard: %w", err)
+		return result, err
+	}
+
+	var dashboard Dashboard
+	err = json.Unmarshal(dashboardBytes, &dashboard)
+	if err != nil {
+		err = fmt.Errorf("unmarshaling dashboard: %w", err)
+		return result, err
+	}
+
+	dashboard.UID = uid
+
+	err = s.grafanaClient.UpdateDashboard(ctx, &dashboard, message)
+	if err != nil {
+		return result, err
+	}
+
+	result = fmt.Sprintf("Successfully updated dashboard with UID: %s", uid)
+	return result, err
+}
+
+// executeGrafanaDeleteDashboard deletes a dashboard.
+func (s *Server) executeGrafanaDeleteDashboard(ctx context.Context, args map[string]interface{}) (result string, err error) {
+	if s.grafanaClient == nil {
+		err = errors.New("grafana access not configured (GRAFANA_URL or GRAFANA_API_KEY not set)")
+		return result, err
+	}
+
+	uid, _ := args["uid"].(string)
+	if uid == "" {
+		err = errors.New("uid parameter is required")
+		return result, err
+	}
+
+	err = s.grafanaClient.DeleteDashboard(ctx, uid)
+	if err != nil {
+		return result, err
+	}
+
+	result = fmt.Sprintf("Successfully deleted dashboard with UID: %s", uid)
+	return result, err
 }
