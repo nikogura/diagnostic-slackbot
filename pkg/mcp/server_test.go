@@ -90,8 +90,8 @@ func TestGetToolDefinitions(t *testing.T) {
 
 	tools := getToolDefinitions()
 
-	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR = 7 total)
-	expectedCount := 7
+	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 1 Database = 8 total)
+	expectedCount := 8
 	if len(tools) != expectedCount {
 		t.Errorf("getToolDefinitions() returned %d tools, want %d", len(tools), expectedCount)
 	}
@@ -105,6 +105,7 @@ func TestGetToolDefinitions(t *testing.T) {
 		"github_list_directory",
 		"github_search_code",
 		"ecr_scan_results",
+		"database_query",
 	}
 
 	toolMap := make(map[string]bool)

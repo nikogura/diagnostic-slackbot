@@ -22,6 +22,7 @@ import (
 type Server struct {
 	lokiClient   *k8s.LokiClient
 	githubClient *github.Client
+	dbClient     *DatabaseClient
 	logger       *slog.Logger
 	companyName  string
 }
@@ -29,6 +30,7 @@ type Server struct {
 // NewServer creates a new MCP server.
 func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logger) (result *Server) {
 	var githubClient *github.Client
+	var dbClient *DatabaseClient
 
 	if githubToken != "" {
 		ts := oauth2.StaticTokenSource(
@@ -41,6 +43,20 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 		logger.Warn("GitHub token not provided - GitHub tools will be unavailable")
 	}
 
+	// Initialize database client if DATABASE_URL is provided
+	if os.Getenv("DATABASE_URL") != "" {
+		var err error
+		dbClient, err = NewDatabaseClient(logger)
+		if err != nil {
+			logger.Warn("Database client initialization failed - database tools will be unavailable",
+				slog.String("error", err.Error()))
+		} else {
+			logger.Info("Database client initialized - database tools available")
+		}
+	} else {
+		logger.Info("DATABASE_URL not provided - database tools will be unavailable")
+	}
+
 	// Get company name from environment, default to "Company"
 	companyName := os.Getenv("COMPANY_NAME")
 	if companyName == "" {
@@ -50,6 +66,7 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 	result = &Server{
 		lokiClient:   lokiClient,
 		githubClient: githubClient,
+		dbClient:     dbClient,
 		logger:       logger,
 		companyName:  companyName,
 	}
@@ -344,12 +361,35 @@ func getECRTools() (result []MCPTool) {
 	return result
 }
 
+// getDatabaseTools returns database-related tool definitions.
+func getDatabaseTools() (result []MCPTool) {
+	result = []MCPTool{
+		{
+			Name:        "database_query",
+			Description: "Execute a read-only SQL query against a database. Supports PostgreSQL, MySQL, and SQLite. Only SELECT, WITH, SHOW, DESCRIBE, and EXPLAIN queries are allowed.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "SQL query to execute (SELECT, WITH, SHOW, DESCRIBE, or EXPLAIN only)",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	}
+
+	return result
+}
+
 // getToolDefinitions returns the list of available MCP tool definitions.
 func getToolDefinitions() (result []MCPTool) {
 	result = append(result, getLokiTools()...)
 	result = append(result, getUtilityTools()...)
 	result = append(result, getGitHubTools()...)
 	result = append(result, getECRTools()...)
+	result = append(result, getDatabaseTools()...)
 
 	return result
 }
@@ -407,6 +447,9 @@ func (s *Server) handleToolCall(ctx context.Context, req MCPRequest) {
 
 	case "ecr_scan_results":
 		result, err = s.executeECRScanResults(ctx, params.Arguments)
+
+	case "database_query":
+		result, err = s.executeDatabaseQuery(ctx, params.Arguments)
 
 	default:
 		s.sendError(req.ID, fmt.Sprintf("unknown tool: %s", params.Name))
@@ -704,6 +747,38 @@ func (s *Server) executeGitHubSearchCode(ctx context.Context, args map[string]in
 
 	result = fmt.Sprintf("Found %d results for: %s\n\n%s",
 		searchResult.GetTotal(), query, strings.Join(results, "\n\n"))
+	return result, err
+}
+
+// executeDatabaseQuery executes a read-only database query.
+func (s *Server) executeDatabaseQuery(ctx context.Context, args map[string]interface{}) (result string, err error) {
+	if s.dbClient == nil {
+		err = errors.New("database access not configured (DATABASE_URL not set)")
+		return result, err
+	}
+
+	query, _ := args["query"].(string)
+	if query == "" {
+		err = errors.New("query parameter is required")
+		return result, err
+	}
+
+	// Execute the read-only query
+	var queryResult QueryResult
+	queryResult, err = s.dbClient.ExecuteReadOnlyQuery(ctx, query)
+	if err != nil {
+		return result, err
+	}
+
+	// Format the result as JSON for Claude to parse
+	var resultBytes []byte
+	resultBytes, err = json.MarshalIndent(queryResult, "", "  ")
+	if err != nil {
+		err = fmt.Errorf("formatting query result: %w", err)
+		return result, err
+	}
+
+	result = string(resultBytes)
 	return result, err
 }
 
