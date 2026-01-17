@@ -1,5 +1,8 @@
 # Build stage
-FROM golang:1.24 AS builder
+FROM golang:1.24-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git make
 
 # Set working directory
 WORKDIR /build
@@ -13,12 +16,38 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build static binaries for distroless
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w -s' -o /bin/diagnostic-slackbot ./cmd/bot
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w -s' -o /bin/mcp-server ./cmd/mcp-server
+# Build the binaries
+RUN go build -o /bin/diagnostic-slackbot ./cmd/bot
+RUN go build -o /bin/mcp-server ./cmd/mcp-server
 
-# Final stage - distroless
-FROM gcr.io/distroless/base-debian12:nonroot
+# Final stage
+FROM alpine:3.19
+
+# Install runtime dependencies including LaTeX, Pandoc, and Claude Code
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    ttf-dejavu \
+    ttf-liberation \
+    fontconfig \
+    texlive \
+    texlive-luatex \
+    texmf-dist-latexextra \
+    texmf-dist-fontsextra \
+    pandoc \
+    make \
+    nodejs \
+    npm \
+    wget
+
+# Install Claude Code globally (installs as 'claude' in /usr/local/bin/)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Create non-root user with home directory
+RUN addgroup -g 1000 bot && \
+    adduser -D -u 1000 -G bot bot && \
+    mkdir -p /home/bot/.claude && \
+    chown -R bot:bot /home/bot
 
 # Set working directory
 WORKDIR /app
@@ -30,18 +59,23 @@ COPY --from=builder /bin/mcp-server /app/mcp-server
 # Investigation templates are mounted from Vault secrets at runtime
 
 # Copy engineering standards
-COPY --chown=65532:65532 CLAUDE.md /app/docs/CLAUDE.md
+COPY --chown=bot:bot CLAUDE.md /app/docs/CLAUDE.md
 
 # Copy MCP configuration
-COPY --chown=65532:65532 .mcp.json /app/.mcp.json
+COPY --chown=bot:bot .mcp.json /app/.mcp.json
 
 # Copy LaTeX templates (not in reports/ - that's for generated PDFs)
-COPY --chown=65532:65532 latex-templates/ /app/latex-templates/
+COPY --chown=bot:bot latex-templates/ /app/latex-templates/
 
 # Copy entrypoint script
-COPY --chown=65532:65532 entrypoint.sh /app/entrypoint.sh
+COPY --chown=root:root entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
-# User is already nonroot (65532) in distroless
+# Create tmp directory for Claude Code prompt files
+RUN mkdir -p /tmp && chown bot:bot /tmp
+
+# Switch to non-root user
+USER bot
 
 # Expose no ports (Socket Mode doesn't need inbound connections)
 
