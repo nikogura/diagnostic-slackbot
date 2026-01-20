@@ -28,6 +28,41 @@ type DatabaseClient struct {
 	logger *slog.Logger
 }
 
+// interpolateCredentials replaces credential placeholders in a connection string.
+// Supported placeholders: {{USERNAME}}, {{PASSWORD}}, ${USERNAME}, ${PASSWORD}.
+func interpolateCredentials(connStr string, logger *slog.Logger) (result string) {
+	result = connStr
+
+	username := os.Getenv("DATABASE_USERNAME")
+	password := os.Getenv("DATABASE_PASSWORD")
+
+	// Check for interpolation tokens and replace if credentials are available
+	hasUsernameToken := strings.Contains(result, "{{USERNAME}}") || strings.Contains(result, "${USERNAME}")
+	hasPasswordToken := strings.Contains(result, "{{PASSWORD}}") || strings.Contains(result, "${PASSWORD}")
+
+	if hasUsernameToken && username != "" {
+		result = strings.ReplaceAll(result, "{{USERNAME}}", username)
+		result = strings.ReplaceAll(result, "${USERNAME}", username)
+		logger.Debug("Interpolated DATABASE_USERNAME into connection string")
+	}
+
+	if hasPasswordToken && password != "" {
+		result = strings.ReplaceAll(result, "{{PASSWORD}}", password)
+		result = strings.ReplaceAll(result, "${PASSWORD}", password)
+		logger.Debug("Interpolated DATABASE_PASSWORD into connection string")
+	}
+
+	// Warn if tokens exist but credentials are missing
+	if hasUsernameToken && username == "" {
+		logger.Warn("DATABASE_URL contains username placeholder but DATABASE_USERNAME is not set")
+	}
+	if hasPasswordToken && password == "" {
+		logger.Warn("DATABASE_URL contains password placeholder but DATABASE_PASSWORD is not set")
+	}
+
+	return result
+}
+
 // NewDatabaseClient creates a new database client with read-only access.
 func NewDatabaseClient(logger *slog.Logger) (result *DatabaseClient, err error) {
 	// Get connection string from environment
@@ -41,6 +76,9 @@ func NewDatabaseClient(logger *slog.Logger) (result *DatabaseClient, err error) 
 		err = errors.New("DATABASE_URL environment variable is required")
 		return result, err
 	}
+
+	// Interpolate credentials if placeholders exist
+	connStr = interpolateCredentials(connStr, logger)
 
 	// Parse the connection string to determine the driver
 	var driverName string

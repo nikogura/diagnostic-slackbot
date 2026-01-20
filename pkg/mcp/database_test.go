@@ -660,3 +660,118 @@ func (q QueryResult) MarshalJSON() (result []byte, err error) {
 	// Placeholder implementation - actual marshaling handled by json package
 	return result, err
 }
+
+// TestInterpolateCredentials tests credential interpolation in connection strings.
+func TestInterpolateCredentials(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv()
+
+	tests := []struct {
+		name     string
+		connStr  string
+		envVars  map[string]string
+		expected string
+	}{
+		{
+			name:     "no_placeholders",
+			connStr:  "postgres://user:pass@localhost:5432/testdb",
+			envVars:  map[string]string{},
+			expected: "postgres://user:pass@localhost:5432/testdb",
+		},
+		{
+			name:    "curly_brace_placeholders",
+			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			envVars: map[string]string{
+				"DATABASE_USERNAME": "myuser",
+				"DATABASE_PASSWORD": "mypass",
+			},
+			expected: "postgres://myuser:mypass@localhost:5432/testdb",
+		},
+		{
+			name:    "dollar_sign_placeholders",
+			connStr: "postgres://${USERNAME}:${PASSWORD}@localhost:5432/testdb",
+			envVars: map[string]string{
+				"DATABASE_USERNAME": "myuser",
+				"DATABASE_PASSWORD": "mypass",
+			},
+			expected: "postgres://myuser:mypass@localhost:5432/testdb",
+		},
+		{
+			name:    "mixed_placeholders",
+			connStr: "postgres://{{USERNAME}}:${PASSWORD}@localhost:5432/testdb",
+			envVars: map[string]string{
+				"DATABASE_USERNAME": "myuser",
+				"DATABASE_PASSWORD": "mypass",
+			},
+			expected: "postgres://myuser:mypass@localhost:5432/testdb",
+		},
+		{
+			name:     "placeholders_without_credentials",
+			connStr:  "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			envVars:  map[string]string{},
+			expected: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+		},
+		{
+			name:    "only_username_set",
+			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			envVars: map[string]string{
+				"DATABASE_USERNAME": "myuser",
+			},
+			expected: "postgres://myuser:{{PASSWORD}}@localhost:5432/testdb",
+		},
+		{
+			name:    "only_password_set",
+			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			envVars: map[string]string{
+				"DATABASE_PASSWORD": "mypass",
+			},
+			expected: "postgres://{{USERNAME}}:mypass@localhost:5432/testdb",
+		},
+		{
+			name:    "credentials_set_but_no_placeholders",
+			connStr: "postgres://hardcoded:creds@localhost:5432/testdb",
+			envVars: map[string]string{
+				"DATABASE_USERNAME": "myuser",
+				"DATABASE_PASSWORD": "mypass",
+			},
+			expected: "postgres://hardcoded:creds@localhost:5432/testdb",
+		},
+		{
+			name:    "special_characters_in_password",
+			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			envVars: map[string]string{
+				"DATABASE_USERNAME": "myuser",
+				"DATABASE_PASSWORD": "p@ss!w0rd#123",
+			},
+			expected: "postgres://myuser:p@ss!w0rd#123@localhost:5432/testdb",
+		},
+		{
+			name:    "mysql_connection_string",
+			connStr: "mysql://{{USERNAME}}:{{PASSWORD}}@localhost:3306/testdb",
+			envVars: map[string]string{
+				"DATABASE_USERNAME": "myuser",
+				"DATABASE_PASSWORD": "mypass",
+			},
+			expected: "mysql://myuser:mypass@localhost:3306/testdb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Cannot use t.Parallel() with t.Setenv()
+
+			// Clear any existing env vars first
+			t.Setenv("DATABASE_USERNAME", "")
+			t.Setenv("DATABASE_PASSWORD", "")
+
+			// Set test-specific environment variables
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
+			}
+
+			logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+			result := interpolateCredentials(tt.connStr, logger)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
