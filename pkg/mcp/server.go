@@ -25,6 +25,23 @@ const (
 	methodToolsCall  = "tools/call"
 )
 
+// Tool name constants.
+const (
+	toolQueryLoki              = "query_loki"
+	toolWhoisLookup            = "whois_lookup"
+	toolGeneratePDF            = "generate_pdf"
+	toolGitHubGetFile          = "github_get_file"
+	toolGitHubListDirectory    = "github_list_directory"
+	toolGitHubSearchCode       = "github_search_code"
+	toolECRScanResults         = "ecr_scan_results"
+	toolDatabaseQuery          = "database_query"
+	toolGrafanaListDashboards  = "grafana_list_dashboards"
+	toolGrafanaGetDashboard    = "grafana_get_dashboard"
+	toolGrafanaCreateDashboard = "grafana_create_dashboard"
+	toolGrafanaUpdateDashboard = "grafana_update_dashboard"
+	toolGrafanaDeleteDashboard = "grafana_delete_dashboard"
+)
+
 // Server implements the MCP (Model Context Protocol) server.
 type Server struct {
 	lokiClient    *k8s.LokiClient
@@ -191,7 +208,7 @@ func (s *Server) handleInitialize(_ context.Context, req MCPRequest) {
 func getLokiTools() (result []MCPTool) {
 	result = []MCPTool{
 		{
-			Name:        "query_loki",
+			Name:        toolQueryLoki,
 			Description: "Query Loki log aggregation system for ModSecurity WAF logs. Returns JSON log entries with transaction details, blocked IPs, rule IDs, etc.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -225,7 +242,7 @@ func getLokiTools() (result []MCPTool) {
 func getUtilityTools() (result []MCPTool) {
 	result = []MCPTool{
 		{
-			Name:        "whois_lookup",
+			Name:        toolWhoisLookup,
 			Description: "Perform whois lookup on an IP address to determine geolocation, ISP, ASN, and organization. Useful for analyzing blocked IPs to determine if they're VPNs, cloud providers, or suspicious sources.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -239,7 +256,7 @@ func getUtilityTools() (result []MCPTool) {
 			},
 		},
 		{
-			Name:        "generate_pdf",
+			Name:        toolGeneratePDF,
 			Description: "Generate a PDF report from Markdown content using pandoc with LaTeX. The PDF will be saved to /tmp/ and automatically uploaded to Slack. ALWAYS use this tool for report generation to provide downloadable reports.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -269,7 +286,7 @@ func getUtilityTools() (result []MCPTool) {
 func getGitHubTools() (result []MCPTool) {
 	result = []MCPTool{
 		{
-			Name:        "github_get_file",
+			Name:        toolGitHubGetFile,
 			Description: "Fetch a file from a GitHub repository. Useful for reading database schema files, migration files, or configuration. Requires GITHUB_TOKEN to be configured.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -295,7 +312,7 @@ func getGitHubTools() (result []MCPTool) {
 			},
 		},
 		{
-			Name:        "github_list_directory",
+			Name:        toolGitHubListDirectory,
 			Description: "List files in a GitHub repository directory. Useful for discovering migration files or schema versions. Requires GITHUB_TOKEN to be configured.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -321,7 +338,7 @@ func getGitHubTools() (result []MCPTool) {
 			},
 		},
 		{
-			Name:        "github_search_code",
+			Name:        toolGitHubSearchCode,
 			Description: "Search for code across GitHub repositories. Useful for finding migration patterns or schema references. Requires GITHUB_TOKEN to be configured.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -343,7 +360,7 @@ func getGitHubTools() (result []MCPTool) {
 func getECRTools() (result []MCPTool) {
 	result = []MCPTool{
 		{
-			Name:        "ecr_scan_results",
+			Name:        toolECRScanResults,
 			Description: "Query AWS ECR for container image vulnerability scan results across multiple accounts. Returns vulnerability findings with severity levels (CRITICAL, HIGH, MEDIUM, LOW), CVE IDs, affected packages, and remediation guidance.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -391,7 +408,7 @@ func getECRTools() (result []MCPTool) {
 func getDatabaseTools() (result []MCPTool) {
 	result = []MCPTool{
 		{
-			Name:        "database_query",
+			Name:        toolDatabaseQuery,
 			Description: "Execute a read-only SQL query against a database. Supports PostgreSQL, MySQL, and SQLite. Only SELECT, WITH, SHOW, DESCRIBE, and EXPLAIN queries are allowed.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -420,7 +437,7 @@ func getGrafanaTools() (result []MCPTool) {
 func getGrafanaReadTools() (result []MCPTool) {
 	result = []MCPTool{
 		{
-			Name:        "grafana_list_dashboards",
+			Name:        toolGrafanaListDashboards,
 			Description: "List all Grafana dashboards the user has access to",
 			InputSchema: map[string]interface{}{
 				"type":       "object",
@@ -428,7 +445,7 @@ func getGrafanaReadTools() (result []MCPTool) {
 			},
 		},
 		{
-			Name:        "grafana_get_dashboard",
+			Name:        toolGrafanaGetDashboard,
 			Description: "Get a specific Grafana dashboard by UID",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -455,7 +472,7 @@ func getGrafanaWriteTools() (result []MCPTool) {
 // getGrafanaCreateDashboardTool returns the tool definition for creating dashboards.
 func getGrafanaCreateDashboardTool() (tool MCPTool) {
 	tool = MCPTool{
-		Name:        "grafana_create_dashboard",
+		Name:        toolGrafanaCreateDashboard,
 		Description: "Create a new Grafana dashboard from queries. Supports SQL (PostgreSQL/MySQL), Prometheus (PromQL), and CloudWatch metrics. Ideal for CEO-level business and operational metrics dashboards.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
@@ -548,7 +565,7 @@ func getGrafanaCreateDashboardTool() (tool MCPTool) {
 func getGrafanaModifyTools() (result []MCPTool) {
 	result = []MCPTool{
 		{
-			Name:        "grafana_update_dashboard",
+			Name:        toolGrafanaUpdateDashboard,
 			Description: "Update an existing Grafana dashboard",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -570,7 +587,7 @@ func getGrafanaModifyTools() (result []MCPTool) {
 			},
 		},
 		{
-			Name:        "grafana_delete_dashboard",
+			Name:        toolGrafanaDeleteDashboard,
 			Description: "Delete a Grafana dashboard",
 			InputSchema: map[string]interface{}{
 				"type": "object",
@@ -633,43 +650,43 @@ func (s *Server) handleToolCall(ctx context.Context, req MCPRequest) {
 	var result string
 
 	switch params.Name {
-	case "query_loki":
+	case toolQueryLoki:
 		result, err = s.executeQueryLoki(ctx, params.Arguments)
 
-	case "whois_lookup":
+	case toolWhoisLookup:
 		result, err = s.executeWhoisLookup(ctx, params.Arguments)
 
-	case "generate_pdf":
+	case toolGeneratePDF:
 		result, err = s.executeGeneratePDF(ctx, params.Arguments)
 
-	case "github_get_file":
+	case toolGitHubGetFile:
 		result, err = s.executeGitHubGetFile(ctx, params.Arguments)
 
-	case "github_list_directory":
+	case toolGitHubListDirectory:
 		result, err = s.executeGitHubListDirectory(ctx, params.Arguments)
 
-	case "github_search_code":
+	case toolGitHubSearchCode:
 		result, err = s.executeGitHubSearchCode(ctx, params.Arguments)
 
-	case "ecr_scan_results":
+	case toolECRScanResults:
 		result, err = s.executeECRScanResults(ctx, params.Arguments)
 
-	case "database_query":
+	case toolDatabaseQuery:
 		result, err = s.executeDatabaseQuery(ctx, params.Arguments)
 
-	case "grafana_list_dashboards":
+	case toolGrafanaListDashboards:
 		result, err = s.executeGrafanaListDashboards(ctx, params.Arguments)
 
-	case "grafana_get_dashboard":
+	case toolGrafanaGetDashboard:
 		result, err = s.executeGrafanaGetDashboard(ctx, params.Arguments)
 
-	case "grafana_create_dashboard":
+	case toolGrafanaCreateDashboard:
 		result, err = s.executeGrafanaCreateDashboard(ctx, params.Arguments)
 
-	case "grafana_update_dashboard":
+	case toolGrafanaUpdateDashboard:
 		result, err = s.executeGrafanaUpdateDashboard(ctx, params.Arguments)
 
-	case "grafana_delete_dashboard":
+	case toolGrafanaDeleteDashboard:
 		result, err = s.executeGrafanaDeleteDashboard(ctx, params.Arguments)
 
 	default:

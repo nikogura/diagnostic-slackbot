@@ -341,43 +341,43 @@ func (h *HTTPServer) handleToolCall(ctx context.Context, req MCPRequest) (respon
 // executeTool executes a tool by name.
 func (h *HTTPServer) executeTool(ctx context.Context, params MCPToolCallParams) (result string, err error) {
 	switch params.Name {
-	case "query_loki":
+	case toolQueryLoki:
 		result, err = h.server.executeQueryLoki(ctx, params.Arguments)
 
-	case "whois_lookup":
+	case toolWhoisLookup:
 		result, err = h.server.executeWhoisLookup(ctx, params.Arguments)
 
-	case "generate_pdf":
+	case toolGeneratePDF:
 		result, err = h.server.executeGeneratePDF(ctx, params.Arguments)
 
-	case "github_get_file":
+	case toolGitHubGetFile:
 		result, err = h.server.executeGitHubGetFile(ctx, params.Arguments)
 
-	case "github_list_directory":
+	case toolGitHubListDirectory:
 		result, err = h.server.executeGitHubListDirectory(ctx, params.Arguments)
 
-	case "github_search_code":
+	case toolGitHubSearchCode:
 		result, err = h.server.executeGitHubSearchCode(ctx, params.Arguments)
 
-	case "ecr_scan_results":
+	case toolECRScanResults:
 		result, err = h.server.executeECRScanResults(ctx, params.Arguments)
 
-	case "database_query":
+	case toolDatabaseQuery:
 		result, err = h.server.executeDatabaseQuery(ctx, params.Arguments)
 
-	case "grafana_list_dashboards":
+	case toolGrafanaListDashboards:
 		result, err = h.server.executeGrafanaListDashboards(ctx, params.Arguments)
 
-	case "grafana_get_dashboard":
+	case toolGrafanaGetDashboard:
 		result, err = h.server.executeGrafanaGetDashboard(ctx, params.Arguments)
 
-	case "grafana_create_dashboard":
+	case toolGrafanaCreateDashboard:
 		result, err = h.server.executeGrafanaCreateDashboard(ctx, params.Arguments)
 
-	case "grafana_update_dashboard":
+	case toolGrafanaUpdateDashboard:
 		result, err = h.server.executeGrafanaUpdateDashboard(ctx, params.Arguments)
 
-	case "grafana_delete_dashboard":
+	case toolGrafanaDeleteDashboard:
 		result, err = h.server.executeGrafanaDeleteDashboard(ctx, params.Arguments)
 
 	default:
