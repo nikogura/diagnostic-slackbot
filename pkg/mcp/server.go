@@ -18,6 +18,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// MCP method constants.
+const (
+	methodInitialize = "initialize"
+	methodToolsList  = "tools/list"
+	methodToolsCall  = "tools/call"
+)
+
 // Server implements the MCP (Model Context Protocol) server.
 type Server struct {
 	lokiClient    *k8s.LokiClient
@@ -145,13 +152,13 @@ func (s *Server) sendServerInfo() {
 // handleRequest processes an MCP request.
 func (s *Server) handleRequest(ctx context.Context, req MCPRequest) {
 	switch req.Method {
-	case "initialize":
+	case methodInitialize:
 		s.handleInitialize(ctx, req)
 
-	case "tools/list":
+	case methodToolsList:
 		s.handleListTools(ctx, req)
 
-	case "tools/call":
+	case methodToolsCall:
 		s.handleToolCall(ctx, req)
 
 	default:

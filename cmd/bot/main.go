@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/nikogura/diagnostic-slackbot/pkg/bot"
+	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
+	"github.com/nikogura/diagnostic-slackbot/pkg/mcp"
 	"github.com/nikogura/diagnostic-slackbot/pkg/metrics"
 )
 
@@ -76,6 +78,9 @@ func main() {
 			logger.ErrorContext(ctx, "metrics server error", slog.String("error", metricsErr.Error()))
 		}
 	}()
+
+	// Start MCP HTTP server if enabled
+	startMCPHTTPServer(ctx, cfg.GitHubToken, logger)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -149,4 +154,32 @@ func parseFileRetention(logger *slog.Logger) (result time.Duration) {
 		slog.Duration("retention", result))
 
 	return result
+}
+
+// startMCPHTTPServer starts the MCP HTTP server if MCP_HTTP_ENABLED is true.
+func startMCPHTTPServer(ctx context.Context, githubToken string, logger *slog.Logger) {
+	mcpHTTPEnabled := getEnv("MCP_HTTP_ENABLED", "false")
+	if mcpHTTPEnabled != "true" {
+		return
+	}
+
+	mcpHTTPPort := getEnv("MCP_HTTP_PORT", "8090")
+	mcpHTTPAddr := ":" + mcpHTTPPort
+
+	lokiEndpoint := getEnv("LOKI_ENDPOINT", "")
+	if lokiEndpoint == "" {
+		logger.WarnContext(ctx, "LOKI_ENDPOINT not set - MCP Loki tools will be unavailable")
+		lokiEndpoint = "http://localhost:3100" // Fallback
+	}
+
+	lokiClient := k8s.NewLokiClient(lokiEndpoint, logger)
+	mcpServer := mcp.NewServer(lokiClient, githubToken, logger)
+
+	go func() {
+		logger.InfoContext(ctx, "starting MCP HTTP server", slog.String("addr", mcpHTTPAddr))
+		mcpErr := mcpServer.RunHTTP(ctx, mcpHTTPAddr)
+		if mcpErr != nil {
+			logger.ErrorContext(ctx, "MCP HTTP server error", slog.String("error", mcpErr.Error()))
+		}
+	}()
 }
