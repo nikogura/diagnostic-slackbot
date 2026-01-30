@@ -4,6 +4,9 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewClientWithModel(t *testing.T) {
@@ -43,21 +46,10 @@ func TestNewClientWithModel(t *testing.T) {
 
 			client := NewClient(tt.apiKey, tt.model, logger)
 
-			if client == nil {
-				t.Fatal("NewClient returned nil")
-			}
-
-			if client.model != tt.expectedModel {
-				t.Errorf("NewClient() model = %q, want %q", client.model, tt.expectedModel)
-			}
-
-			if client.logger == nil {
-				t.Error("NewClient() logger is nil")
-			}
-
-			if client.client == nil {
-				t.Error("NewClient() anthropic client is nil")
-			}
+			require.NotNil(t, client, "NewClient returned nil")
+			assert.Equal(t, tt.expectedModel, client.model, "NewClient() model mismatch")
+			require.NotNil(t, client.logger, "NewClient() logger is nil")
+			require.NotNil(t, client.client, "NewClient() anthropic client is nil")
 		})
 	}
 }

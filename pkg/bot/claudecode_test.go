@@ -4,6 +4,9 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewClaudeCodeRunnerWithModel(t *testing.T) {
@@ -44,17 +47,9 @@ func TestNewClaudeCodeRunnerWithModel(t *testing.T) {
 
 			runner := NewClaudeCodeRunner(tt.model, logger)
 
-			if runner == nil {
-				t.Fatal("NewClaudeCodeRunner returned nil")
-			}
-
-			if runner.model != tt.expectedModel {
-				t.Errorf("NewClaudeCodeRunner() model = %q, want %q", runner.model, tt.expectedModel)
-			}
-
-			if runner.logger == nil {
-				t.Error("NewClaudeCodeRunner() logger is nil")
-			}
+			require.NotNil(t, runner, "NewClaudeCodeRunner returned nil")
+			assert.Equal(t, tt.expectedModel, runner.model, "NewClaudeCodeRunner() model mismatch")
+			require.NotNil(t, runner.logger, "NewClaudeCodeRunner() logger is nil")
 		})
 	}
 }

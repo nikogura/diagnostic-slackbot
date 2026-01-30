@@ -40,6 +40,7 @@ const (
 	toolGrafanaCreateDashboard = "grafana_create_dashboard"
 	toolGrafanaUpdateDashboard = "grafana_update_dashboard"
 	toolGrafanaDeleteDashboard = "grafana_delete_dashboard"
+	// CloudWatch Logs tools are defined in cloudwatch.go.
 )
 
 // Server implements the MCP (Model Context Protocol) server.
@@ -613,6 +614,7 @@ func getToolDefinitions() (result []MCPTool) {
 	result = append(result, getECRTools()...)
 	result = append(result, getDatabaseTools()...)
 	result = append(result, getGrafanaTools()...)
+	result = append(result, getCloudWatchTools()...)
 
 	return result
 }
@@ -688,6 +690,15 @@ func (s *Server) handleToolCall(ctx context.Context, req MCPRequest) {
 
 	case toolGrafanaDeleteDashboard:
 		result, err = s.executeGrafanaDeleteDashboard(ctx, params.Arguments)
+
+	case toolCloudWatchLogsQuery:
+		result, err = s.executeCloudWatchLogsQuery(ctx, params.Arguments)
+
+	case toolCloudWatchLogsListGroups:
+		result, err = s.executeCloudWatchLogsListGroups(ctx, params.Arguments)
+
+	case toolCloudWatchLogsGetEvents:
+		result, err = s.executeCloudWatchLogsGetEvents(ctx, params.Arguments)
 
 	default:
 		s.sendError(req.ID, fmt.Sprintf("unknown tool: %s", params.Name))

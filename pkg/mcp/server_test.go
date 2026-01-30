@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetGitHubTools(t *testing.T) {
@@ -90,8 +91,8 @@ func TestGetToolDefinitions(t *testing.T) {
 
 	tools := getToolDefinitions()
 
-	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 1 Database + 5 Grafana = 13 total)
-	expectedCount := 13
+	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 1 Database + 5 Grafana + 3 CloudWatch = 16 total)
+	expectedCount := 16
 	if len(tools) != expectedCount {
 		t.Errorf("getToolDefinitions() returned %d tools, want %d", len(tools), expectedCount)
 	}
@@ -111,6 +112,9 @@ func TestGetToolDefinitions(t *testing.T) {
 		"grafana_create_dashboard",
 		"grafana_update_dashboard",
 		"grafana_delete_dashboard",
+		"cloudwatch_logs_query",
+		"cloudwatch_logs_list_groups",
+		"cloudwatch_logs_get_events",
 	}
 
 	toolMap := make(map[string]bool)
@@ -232,17 +236,9 @@ func TestNewServerWithGitHubToken(t *testing.T) {
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
 	server := NewServer(lokiClient, "test-token", logger)
 
-	if server == nil {
-		t.Fatal("NewServer() returned nil")
-	}
-
-	if server.githubClient == nil {
-		t.Error("NewServer() with GitHub token should initialize githubClient, got nil")
-	}
-
-	if server.lokiClient == nil {
-		t.Error("NewServer() should have lokiClient, got nil")
-	}
+	require.NotNil(t, server, "NewServer() returned nil")
+	require.NotNil(t, server.githubClient, "NewServer() with GitHub token should initialize githubClient")
+	require.NotNil(t, server.lokiClient, "NewServer() should have lokiClient")
 }
 
 func TestNewServerWithoutGitHubToken(t *testing.T) {
@@ -255,17 +251,9 @@ func TestNewServerWithoutGitHubToken(t *testing.T) {
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
 	server := NewServer(lokiClient, "", logger)
 
-	if server == nil {
-		t.Fatal("NewServer() returned nil")
-	}
-
-	if server.githubClient != nil {
-		t.Error("NewServer() without GitHub token should not initialize githubClient, got non-nil")
-	}
-
-	if server.lokiClient == nil {
-		t.Error("NewServer() should have lokiClient, got nil")
-	}
+	require.NotNil(t, server, "NewServer() returned nil")
+	require.Nil(t, server.githubClient, "NewServer() without GitHub token should not initialize githubClient")
+	require.NotNil(t, server.lokiClient, "NewServer() should have lokiClient")
 }
 
 // verifyRequiredFields checks that all required fields exist in the properties map.

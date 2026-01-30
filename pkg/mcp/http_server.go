@@ -380,6 +380,15 @@ func (h *HTTPServer) executeTool(ctx context.Context, params MCPToolCallParams) 
 	case toolGrafanaDeleteDashboard:
 		result, err = h.server.executeGrafanaDeleteDashboard(ctx, params.Arguments)
 
+	case toolCloudWatchLogsQuery:
+		result, err = h.server.executeCloudWatchLogsQuery(ctx, params.Arguments)
+
+	case toolCloudWatchLogsListGroups:
+		result, err = h.server.executeCloudWatchLogsListGroups(ctx, params.Arguments)
+
+	case toolCloudWatchLogsGetEvents:
+		result, err = h.server.executeCloudWatchLogsGetEvents(ctx, params.Arguments)
+
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)
 	}

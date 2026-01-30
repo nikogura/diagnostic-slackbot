@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/nikogura/diagnostic-slackbot/pkg/investigations"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConversationStoreCreateAndGet(t *testing.T) {
@@ -15,33 +17,19 @@ func TestConversationStoreCreateAndGet(t *testing.T) {
 	// Create test conversation
 	conv := store.Create("1234567890.123456", "C12345", "U12345", investigations.InvestigationTypeModSecurity)
 
-	if conv == nil {
-		t.Fatal("Create() returned nil")
-	}
+	require.NotNil(t, conv, "Create() returned nil")
 
 	// Verify fields
-	if conv.SlackThreadTS != "1234567890.123456" {
-		t.Errorf("SlackThreadTS = %s, want %s", conv.SlackThreadTS, "1234567890.123456")
-	}
-	if conv.UserID != "U12345" {
-		t.Errorf("UserID = %s, want %s", conv.UserID, "U12345")
-	}
-	if conv.State != ConversationStateActive {
-		t.Errorf("State = %v, want %v", conv.State, ConversationStateActive)
-	}
+	assert.Equal(t, "1234567890.123456", conv.SlackThreadTS, "SlackThreadTS mismatch")
+	assert.Equal(t, "U12345", conv.UserID, "UserID mismatch")
+	assert.Equal(t, ConversationStateActive, conv.State, "State mismatch")
 
 	// Retrieve by thread TS
 	retrieved, exists := store.Get("1234567890.123456")
-	if !exists {
-		t.Fatal("Get() returned exists=false, expected true")
-	}
-	if retrieved == nil {
-		t.Fatal("Get() returned nil")
-	}
+	require.True(t, exists, "Get() returned exists=false, expected true")
+	require.NotNil(t, retrieved, "Get() returned nil")
 
-	if retrieved.ID != conv.ID {
-		t.Errorf("Get() ID = %s, want %s", retrieved.ID, conv.ID)
-	}
+	assert.Equal(t, conv.ID, retrieved.ID, "Get() ID mismatch")
 }
 
 func TestConversationStoreGetNonExistent(t *testing.T) {

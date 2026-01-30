@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
+	"github.com/stretchr/testify/require"
 )
 
 // newTestHTTPServer creates an HTTPServer for testing.
@@ -38,21 +39,10 @@ func TestNewHTTPServer(t *testing.T) {
 
 	httpServer := newTestHTTPServer(t)
 
-	if httpServer == nil {
-		t.Fatal("NewHTTPServer() returned nil")
-	}
-
-	if httpServer.server == nil {
-		t.Error("NewHTTPServer() should have MCP server, got nil")
-	}
-
-	if httpServer.sessions == nil {
-		t.Error("NewHTTPServer() should have sessions map, got nil")
-	}
-
-	if httpServer.httpServer == nil {
-		t.Error("NewHTTPServer() should have http.Server, got nil")
-	}
+	require.NotNil(t, httpServer, "NewHTTPServer() returned nil")
+	require.NotNil(t, httpServer.server, "NewHTTPServer() should have MCP server")
+	require.NotNil(t, httpServer.sessions, "NewHTTPServer() should have sessions map")
+	require.NotNil(t, httpServer.httpServer, "NewHTTPServer() should have http.Server")
 }
 
 func TestHandleHealth(t *testing.T) {
@@ -292,8 +282,8 @@ func TestProcessRequestToolsList(t *testing.T) {
 		t.Fatal("processRequest(tools/list) tools is not []MCPTool")
 	}
 
-	// Should have all 13 tools
-	expectedCount := 13
+	// Should have all 16 tools (including 3 CloudWatch tools)
+	expectedCount := 16
 	if len(toolsList) != expectedCount {
 		t.Errorf("processRequest(tools/list) returned %d tools, want %d", len(toolsList), expectedCount)
 	}
