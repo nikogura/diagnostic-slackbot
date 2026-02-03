@@ -464,6 +464,7 @@ The bot is configured via environment variables:
 - `FILE_RETENTION` - File cleanup interval (default: `24h`)
 - `GITHUB_TOKEN` - Personal access token for GitHub tools (optional)
 - `AWS_*` - AWS credentials for ECR vulnerability scanning (optional)
+- `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for CloudWatch queries (optional). If not set, uses the workload's default credentials (IRSA, instance profile, etc.)
 
 ## Building
 

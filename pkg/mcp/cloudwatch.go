@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 // CloudWatch Logs tool name constants.
@@ -30,6 +33,10 @@ const (
 	cloudWatchMaxResultsPerPoll = 10000
 	timeNow                     = "now"
 )
+
+// Environment variable for optional IAM role assumption.
+// If set, CloudWatch queries will assume this role instead of using the default credentials.
+const envCloudWatchAssumeRole = "CLOUDWATCH_ASSUME_ROLE"
 
 // CloudWatchLogsClient defines the interface for CloudWatch Logs operations.
 // This allows for easy mocking in tests.
@@ -388,16 +395,49 @@ func (s *Server) executeCloudWatchLogsGetEvents(ctx context.Context, args map[st
 }
 
 // createCloudWatchClient creates a CloudWatch Logs client for the specified region.
+// If CLOUDWATCH_ASSUME_ROLE is set, the client will assume that role for all operations.
+// Otherwise, it uses the default credential chain (IRSA, instance profile, etc.).
 func createCloudWatchClient(ctx context.Context, region string) (client *cloudwatchlogs.Client, err error) {
 	var cfg aws.Config
+
 	cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		err = fmt.Errorf("loading AWS config: %w", err)
 		return client, err
 	}
 
+	// Check if we need to assume a role for CloudWatch access
+	assumeRoleARN := os.Getenv(envCloudWatchAssumeRole)
+	if assumeRoleARN != "" {
+		cfg, err = configureAssumeRole(ctx, cfg, assumeRoleARN, region)
+		if err != nil {
+			return client, err
+		}
+	}
+
 	client = cloudwatchlogs.NewFromConfig(cfg)
 	return client, err
+}
+
+// configureAssumeRole creates a new AWS config that assumes the specified role.
+func configureAssumeRole(ctx context.Context, baseCfg aws.Config, roleARN string, region string) (cfg aws.Config, err error) {
+	// Create STS client from base config
+	stsClient := sts.NewFromConfig(baseCfg)
+
+	// Create credentials provider that assumes the role
+	creds := stscreds.NewAssumeRoleProvider(stsClient, roleARN)
+
+	// Load new config with the assume role credentials
+	cfg, err = config.LoadDefaultConfig(ctx,
+		config.WithRegion(region),
+		config.WithCredentialsProvider(creds),
+	)
+	if err != nil {
+		err = fmt.Errorf("configuring assume role %s: %w", roleARN, err)
+		return cfg, err
+	}
+
+	return cfg, err
 }
 
 // runCloudWatchQuery executes a CloudWatch Logs Insights query and waits for results.
