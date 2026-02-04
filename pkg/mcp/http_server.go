@@ -365,6 +365,9 @@ func (h *HTTPServer) executeTool(ctx context.Context, params MCPToolCallParams) 
 	case toolDatabaseQuery:
 		result, err = h.server.executeDatabaseQuery(ctx, params.Arguments)
 
+	case toolDatabaseList:
+		result, err = h.server.executeDatabaseList(ctx, params.Arguments)
+
 	case toolGrafanaListDashboards:
 		result, err = h.server.executeGrafanaListDashboards(ctx, params.Arguments)
 

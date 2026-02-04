@@ -35,6 +35,7 @@ const (
 	toolGitHubSearchCode       = "github_search_code"
 	toolECRScanResults         = "ecr_scan_results"
 	toolDatabaseQuery          = "database_query"
+	toolDatabaseList           = "database_list"
 	toolGrafanaListDashboards  = "grafana_list_dashboards"
 	toolGrafanaGetDashboard    = "grafana_get_dashboard"
 	toolGrafanaCreateDashboard = "grafana_create_dashboard"
@@ -47,7 +48,7 @@ const (
 type Server struct {
 	lokiClient    *k8s.LokiClient
 	githubClient  *github.Client
-	dbClient      *DatabaseClient
+	dbClients     map[string]*DatabaseClient
 	grafanaClient *GrafanaClient
 	logger        *slog.Logger
 	companyName   string
@@ -56,7 +57,6 @@ type Server struct {
 // NewServer creates a new MCP server.
 func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logger) (result *Server) {
 	var githubClient *github.Client
-	var dbClient *DatabaseClient
 	var grafanaClient *GrafanaClient
 
 	if githubToken != "" {
@@ -70,18 +70,24 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 		logger.Warn("GitHub token not provided - GitHub tools will be unavailable")
 	}
 
-	// Initialize database client if DATABASE_URL is provided
-	if os.Getenv("DATABASE_URL") != "" {
-		var err error
-		dbClient, err = NewDatabaseClient(logger)
-		if err != nil {
-			logger.Warn("Database client initialization failed - database tools will be unavailable",
-				slog.String("error", err.Error()))
-		} else {
-			logger.Info("Database client initialized - database tools available")
+	// Initialize database clients from environment variables
+	// Supports both legacy DATABASE_URL and multi-database DATABASE_<NAME>_URL patterns
+	dbClients, dbErr := LoadDatabaseClients(logger)
+	if dbErr != nil {
+		logger.Warn("Database client initialization had errors",
+			slog.String("error", dbErr.Error()))
+	}
+
+	if len(dbClients) > 0 {
+		dbNames := make([]string, 0, len(dbClients))
+		for name := range dbClients {
+			dbNames = append(dbNames, name)
 		}
+		logger.Info("Database clients initialized",
+			slog.Int("count", len(dbClients)),
+			slog.Any("databases", dbNames))
 	} else {
-		logger.Info("DATABASE_URL not provided - database tools will be unavailable")
+		logger.Info("No database configuration found - database tools will be unavailable")
 	}
 
 	// Initialize Grafana client if configured
@@ -109,7 +115,7 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 	result = &Server{
 		lokiClient:    lokiClient,
 		githubClient:  githubClient,
-		dbClient:      dbClient,
+		dbClients:     dbClients,
 		grafanaClient: grafanaClient,
 		logger:        logger,
 		companyName:   companyName,
@@ -418,8 +424,20 @@ func getDatabaseTools() (result []MCPTool) {
 						"type":        "string",
 						"description": "SQL query to execute (SELECT, WITH, SHOW, DESCRIBE, or EXPLAIN only)",
 					},
+					"database": map[string]interface{}{
+						"type":        "string",
+						"description": "Database name to query (e.g., 'terrace', 'mds'). Use 'database_list' tool to see available databases. Defaults to 'default' if not specified.",
+					},
 				},
 				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        toolDatabaseList,
+			Description: "List all available databases that can be queried. Returns the names of configured databases.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
 			},
 		},
 	}
@@ -649,70 +667,64 @@ func (s *Server) handleToolCall(ctx context.Context, req MCPRequest) {
 
 	s.logger.InfoContext(ctx, "executing tool", slog.String("tool", params.Name))
 
-	var result string
-
-	switch params.Name {
-	case toolQueryLoki:
-		result, err = s.executeQueryLoki(ctx, params.Arguments)
-
-	case toolWhoisLookup:
-		result, err = s.executeWhoisLookup(ctx, params.Arguments)
-
-	case toolGeneratePDF:
-		result, err = s.executeGeneratePDF(ctx, params.Arguments)
-
-	case toolGitHubGetFile:
-		result, err = s.executeGitHubGetFile(ctx, params.Arguments)
-
-	case toolGitHubListDirectory:
-		result, err = s.executeGitHubListDirectory(ctx, params.Arguments)
-
-	case toolGitHubSearchCode:
-		result, err = s.executeGitHubSearchCode(ctx, params.Arguments)
-
-	case toolECRScanResults:
-		result, err = s.executeECRScanResults(ctx, params.Arguments)
-
-	case toolDatabaseQuery:
-		result, err = s.executeDatabaseQuery(ctx, params.Arguments)
-
-	case toolGrafanaListDashboards:
-		result, err = s.executeGrafanaListDashboards(ctx, params.Arguments)
-
-	case toolGrafanaGetDashboard:
-		result, err = s.executeGrafanaGetDashboard(ctx, params.Arguments)
-
-	case toolGrafanaCreateDashboard:
-		result, err = s.executeGrafanaCreateDashboard(ctx, params.Arguments)
-
-	case toolGrafanaUpdateDashboard:
-		result, err = s.executeGrafanaUpdateDashboard(ctx, params.Arguments)
-
-	case toolGrafanaDeleteDashboard:
-		result, err = s.executeGrafanaDeleteDashboard(ctx, params.Arguments)
-
-	case toolCloudWatchLogsQuery:
-		result, err = s.executeCloudWatchLogsQuery(ctx, params.Arguments)
-
-	case toolCloudWatchLogsListGroups:
-		result, err = s.executeCloudWatchLogsListGroups(ctx, params.Arguments)
-
-	case toolCloudWatchLogsGetEvents:
-		result, err = s.executeCloudWatchLogsGetEvents(ctx, params.Arguments)
-
-	default:
-		s.sendError(req.ID, fmt.Sprintf("unknown tool: %s", params.Name))
-		return
-	}
-
+	result, err := s.dispatchToolCall(ctx, params.Name, params.Arguments)
 	if err != nil {
 		s.sendError(req.ID, fmt.Sprintf("tool execution error: %v", err))
 		return
 	}
 
+	s.sendToolResult(req.ID, result)
+}
+
+// dispatchToolCall routes a tool call to the appropriate handler.
+func (s *Server) dispatchToolCall(ctx context.Context, toolName string, args map[string]interface{}) (result string, err error) {
+	switch toolName {
+	case toolQueryLoki:
+		result, err = s.executeQueryLoki(ctx, args)
+	case toolWhoisLookup:
+		result, err = s.executeWhoisLookup(ctx, args)
+	case toolGeneratePDF:
+		result, err = s.executeGeneratePDF(ctx, args)
+	case toolGitHubGetFile:
+		result, err = s.executeGitHubGetFile(ctx, args)
+	case toolGitHubListDirectory:
+		result, err = s.executeGitHubListDirectory(ctx, args)
+	case toolGitHubSearchCode:
+		result, err = s.executeGitHubSearchCode(ctx, args)
+	case toolECRScanResults:
+		result, err = s.executeECRScanResults(ctx, args)
+	case toolDatabaseQuery:
+		result, err = s.executeDatabaseQuery(ctx, args)
+	case toolDatabaseList:
+		result, err = s.executeDatabaseList(ctx, args)
+	case toolGrafanaListDashboards:
+		result, err = s.executeGrafanaListDashboards(ctx, args)
+	case toolGrafanaGetDashboard:
+		result, err = s.executeGrafanaGetDashboard(ctx, args)
+	case toolGrafanaCreateDashboard:
+		result, err = s.executeGrafanaCreateDashboard(ctx, args)
+	case toolGrafanaUpdateDashboard:
+		result, err = s.executeGrafanaUpdateDashboard(ctx, args)
+	case toolGrafanaDeleteDashboard:
+		result, err = s.executeGrafanaDeleteDashboard(ctx, args)
+	case toolCloudWatchLogsQuery:
+		result, err = s.executeCloudWatchLogsQuery(ctx, args)
+	case toolCloudWatchLogsListGroups:
+		result, err = s.executeCloudWatchLogsListGroups(ctx, args)
+	case toolCloudWatchLogsGetEvents:
+		result, err = s.executeCloudWatchLogsGetEvents(ctx, args)
+	default:
+		err = fmt.Errorf("unknown tool: %s", toolName)
+	}
+
+	return result, err
+}
+
+// sendToolResult sends a successful tool result response.
+func (s *Server) sendToolResult(id interface{}, result string) {
 	response := MCPResponse{
 		JSONRPC: "2.0",
-		ID:      req.ID,
+		ID:      id,
 		Result: map[string]interface{}{
 			"content": []map[string]interface{}{
 				{
@@ -1001,8 +1013,8 @@ func (s *Server) executeGitHubSearchCode(ctx context.Context, args map[string]in
 
 // executeDatabaseQuery executes a read-only database query.
 func (s *Server) executeDatabaseQuery(ctx context.Context, args map[string]interface{}) (result string, err error) {
-	if s.dbClient == nil {
-		err = errors.New("database access not configured (DATABASE_URL not set)")
+	if len(s.dbClients) == 0 {
+		err = errors.New("no database connections configured. Set DATABASE_URL or DATABASE_<NAME>_URL environment variables")
 		return result, err
 	}
 
@@ -1012,9 +1024,30 @@ func (s *Server) executeDatabaseQuery(ctx context.Context, args map[string]inter
 		return result, err
 	}
 
+	// Get the database name, default to "default"
+	dbName := "default"
+	if name, ok := args["database"].(string); ok && name != "" {
+		dbName = strings.ToLower(name)
+	}
+
+	// Look up the database client
+	client, exists := s.dbClients[dbName]
+	if !exists {
+		availableDBs := make([]string, 0, len(s.dbClients))
+		for name := range s.dbClients {
+			availableDBs = append(availableDBs, name)
+		}
+		err = fmt.Errorf("database %q not configured. Available databases: %v", dbName, availableDBs)
+		return result, err
+	}
+
+	s.logger.InfoContext(ctx, "Executing database query",
+		slog.String("database", dbName),
+		slog.String("query", query))
+
 	// Execute the read-only query
 	var queryResult QueryResult
-	queryResult, err = s.dbClient.ExecuteReadOnlyQuery(ctx, query)
+	queryResult, err = client.ExecuteReadOnlyQuery(ctx, query)
 	if err != nil {
 		return result, err
 	}
@@ -1024,6 +1057,27 @@ func (s *Server) executeDatabaseQuery(ctx context.Context, args map[string]inter
 	resultBytes, err = json.MarshalIndent(queryResult, "", "  ")
 	if err != nil {
 		err = fmt.Errorf("formatting query result: %w", err)
+		return result, err
+	}
+
+	result = string(resultBytes)
+	return result, err
+}
+
+// executeDatabaseList returns a list of available databases.
+func (s *Server) executeDatabaseList(_ context.Context, _ map[string]interface{}) (result string, err error) {
+	if len(s.dbClients) == 0 {
+		err = errors.New("no database connections configured. Set DATABASE_URL or DATABASE_<NAME>_URL environment variables")
+		return result, err
+	}
+
+	databases := GetAvailableDatabases(s.dbClients)
+
+	// Format the result as JSON
+	var resultBytes []byte
+	resultBytes, err = json.MarshalIndent(databases, "", "  ")
+	if err != nil {
+		err = fmt.Errorf("formatting database list: %w", err)
 		return result, err
 	}
 

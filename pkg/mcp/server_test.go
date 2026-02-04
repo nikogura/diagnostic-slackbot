@@ -91,8 +91,8 @@ func TestGetToolDefinitions(t *testing.T) {
 
 	tools := getToolDefinitions()
 
-	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 1 Database + 5 Grafana + 3 CloudWatch = 16 total)
-	expectedCount := 16
+	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 2 Database + 5 Grafana + 3 CloudWatch = 17 total)
+	expectedCount := 17
 	if len(tools) != expectedCount {
 		t.Errorf("getToolDefinitions() returned %d tools, want %d", len(tools), expectedCount)
 	}
@@ -107,6 +107,7 @@ func TestGetToolDefinitions(t *testing.T) {
 		"github_search_code",
 		"ecr_scan_results",
 		"database_query",
+		"database_list",
 		"grafana_list_dashboards",
 		"grafana_get_dashboard",
 		"grafana_create_dashboard",

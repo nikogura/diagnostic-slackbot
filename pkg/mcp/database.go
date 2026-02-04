@@ -20,21 +20,38 @@ const (
 	postgresDriver = "postgres"
 	mysqlDriver    = "mysql"
 	sqliteDriver   = "sqlite3"
+
+	// Environment variable prefixes.
+	databaseEnvPrefix = "DATABASE_"
+	databaseURLSuffix = "_URL"
 )
 
 // DatabaseClient handles read-only database queries.
 type DatabaseClient struct {
 	db     *sql.DB
+	name   string
 	logger *slog.Logger
+}
+
+// DatabaseClientConfig holds configuration for a database client.
+type DatabaseClientConfig struct {
+	Name     string
+	URL      string
+	Username string
+	Password string
+}
+
+// DatabaseInfo contains metadata about a configured database.
+type DatabaseInfo struct {
+	Name      string `json:"name"`
+	Available bool   `json:"available"`
 }
 
 // interpolateCredentials replaces credential placeholders in a connection string.
 // Supported placeholders: {{USERNAME}}, {{PASSWORD}}, ${USERNAME}, ${PASSWORD}.
-func interpolateCredentials(connStr string, logger *slog.Logger) (result string) {
+// If username and password are provided directly, they take precedence over environment variables.
+func interpolateCredentials(connStr, username, password string, logger *slog.Logger) (result string) {
 	result = connStr
-
-	username := os.Getenv("DATABASE_USERNAME")
-	password := os.Getenv("DATABASE_PASSWORD")
 
 	// Check for interpolation tokens and replace if credentials are available
 	hasUsernameToken := strings.Contains(result, "{{USERNAME}}") || strings.Contains(result, "${USERNAME}")
@@ -43,27 +60,29 @@ func interpolateCredentials(connStr string, logger *slog.Logger) (result string)
 	if hasUsernameToken && username != "" {
 		result = strings.ReplaceAll(result, "{{USERNAME}}", username)
 		result = strings.ReplaceAll(result, "${USERNAME}", username)
-		logger.Debug("Interpolated DATABASE_USERNAME into connection string")
+		logger.Debug("Interpolated username into connection string")
 	}
 
 	if hasPasswordToken && password != "" {
 		result = strings.ReplaceAll(result, "{{PASSWORD}}", password)
 		result = strings.ReplaceAll(result, "${PASSWORD}", password)
-		logger.Debug("Interpolated DATABASE_PASSWORD into connection string")
+		logger.Debug("Interpolated password into connection string")
 	}
 
 	// Warn if tokens exist but credentials are missing
 	if hasUsernameToken && username == "" {
-		logger.Warn("DATABASE_URL contains username placeholder but DATABASE_USERNAME is not set")
+		logger.Warn("Connection string contains username placeholder but no username provided")
 	}
 	if hasPasswordToken && password == "" {
-		logger.Warn("DATABASE_URL contains password placeholder but DATABASE_PASSWORD is not set")
+		logger.Warn("Connection string contains password placeholder but no password provided")
 	}
 
 	return result
 }
 
 // NewDatabaseClient creates a new database client with read-only access.
+// This is the legacy function that reads from DATABASE_URL environment variable.
+// For multi-database support, use NewDatabaseClientWithConfig or LoadDatabaseClients.
 func NewDatabaseClient(logger *slog.Logger) (result *DatabaseClient, err error) {
 	// Get connection string from environment
 	connStr := os.Getenv("DATABASE_URL")
@@ -77,37 +96,35 @@ func NewDatabaseClient(logger *slog.Logger) (result *DatabaseClient, err error) 
 		return result, err
 	}
 
+	// Get credentials from legacy environment variables
+	username := os.Getenv("DATABASE_USERNAME")
+	password := os.Getenv("DATABASE_PASSWORD")
+
+	config := DatabaseClientConfig{
+		Name:     "default",
+		URL:      connStr,
+		Username: username,
+		Password: password,
+	}
+
+	result, err = NewDatabaseClientWithConfig(config, logger)
+	return result, err
+}
+
+// NewDatabaseClientWithConfig creates a new database client from explicit configuration.
+func NewDatabaseClientWithConfig(config DatabaseClientConfig, logger *slog.Logger) (result *DatabaseClient, err error) {
+	if config.URL == "" {
+		err = fmt.Errorf("database URL is required for %q", config.Name)
+		return result, err
+	}
+
 	// Interpolate credentials if placeholders exist
-	connStr = interpolateCredentials(connStr, logger)
+	connStr := interpolateCredentials(config.URL, config.Username, config.Password, logger)
 
 	// Parse the connection string to determine the driver
 	var driverName string
-	switch {
-	case strings.HasPrefix(connStr, "postgres://") || strings.HasPrefix(connStr, "postgresql://"):
-		driverName = postgresDriver
-		// Convert URL format to lib/pq format if needed
-		connStr = strings.Replace(connStr, "postgresql://", "postgres://", 1)
-	case strings.Contains(connStr, "host=") && strings.Contains(connStr, "dbname="):
-		// Already in lib/pq format
-		driverName = postgresDriver
-	case strings.Contains(connStr, "user:pass@") && !strings.HasPrefix(connStr, "mysql://"):
-		// Likely a postgres URL without scheme - common in legacy configs
-		driverName = postgresDriver
-		connStr = "postgres://" + connStr
-	case strings.HasPrefix(connStr, "mysql://"):
-		driverName = mysqlDriver
-		// Strip the mysql:// prefix for go-sql-driver/mysql
-		connStr = strings.TrimPrefix(connStr, "mysql://")
-	case strings.HasPrefix(connStr, "sqlite3://") || strings.HasPrefix(connStr, "sqlite://"):
-		driverName = sqliteDriver
-		// Strip the prefix
-		connStr = strings.TrimPrefix(connStr, "sqlite3://")
-		connStr = strings.TrimPrefix(connStr, "sqlite://")
-	case strings.HasSuffix(connStr, ".db") || strings.HasSuffix(connStr, ".sqlite"):
-		// Assume SQLite for .db or .sqlite files
-		driverName = sqliteDriver
-	default:
-		err = errors.New("unsupported database connection string format (supports postgres://, mysql://, sqlite://)")
+	driverName, connStr, err = parseConnectionString(connStr)
+	if err != nil {
 		return result, err
 	}
 
@@ -115,7 +132,7 @@ func NewDatabaseClient(logger *slog.Logger) (result *DatabaseClient, err error) 
 	var db *sql.DB
 	db, err = sql.Open(driverName, connStr)
 	if err != nil {
-		err = fmt.Errorf("failed to open database: %w", err)
+		err = fmt.Errorf("failed to open database %q: %w", config.Name, err)
 		return result, err
 	}
 
@@ -131,19 +148,197 @@ func NewDatabaseClient(logger *slog.Logger) (result *DatabaseClient, err error) 
 
 	err = db.PingContext(ctx)
 	if err != nil {
-		err = fmt.Errorf("failed to ping database: %w", err)
+		err = fmt.Errorf("failed to ping database %q: %w", config.Name, err)
 		_ = db.Close()
 		return result, err
 	}
 
-	logger.Info("Database client initialized successfully")
+	logger.Info("Database client initialized successfully", slog.String("name", config.Name))
 
 	result = &DatabaseClient{
 		db:     db,
+		name:   config.Name,
 		logger: logger,
 	}
 
 	return result, err
+}
+
+// parseConnectionString determines the driver and normalizes the connection string.
+func parseConnectionString(connStr string) (driverName string, normalizedConnStr string, err error) {
+	normalizedConnStr = connStr
+
+	switch {
+	case strings.HasPrefix(connStr, "postgres://") || strings.HasPrefix(connStr, "postgresql://"):
+		driverName = postgresDriver
+		// Convert URL format to lib/pq format if needed
+		normalizedConnStr = strings.Replace(connStr, "postgresql://", "postgres://", 1)
+	case strings.Contains(connStr, "host=") && strings.Contains(connStr, "dbname="):
+		// Already in lib/pq format
+		driverName = postgresDriver
+	case strings.Contains(connStr, "user:pass@") && !strings.HasPrefix(connStr, "mysql://"):
+		// Likely a postgres URL without scheme - common in legacy configs
+		driverName = postgresDriver
+		normalizedConnStr = "postgres://" + connStr
+	case strings.HasPrefix(connStr, "mysql://"):
+		driverName = mysqlDriver
+		// Strip the mysql:// prefix for go-sql-driver/mysql
+		normalizedConnStr = strings.TrimPrefix(connStr, "mysql://")
+	case strings.HasPrefix(connStr, "sqlite3://") || strings.HasPrefix(connStr, "sqlite://"):
+		driverName = sqliteDriver
+		// Strip the prefix
+		normalizedConnStr = strings.TrimPrefix(connStr, "sqlite3://")
+		normalizedConnStr = strings.TrimPrefix(normalizedConnStr, "sqlite://")
+	case strings.HasSuffix(connStr, ".db") || strings.HasSuffix(connStr, ".sqlite"):
+		// Assume SQLite for .db or .sqlite files
+		driverName = sqliteDriver
+	default:
+		err = errors.New("unsupported database connection string format (supports postgres://, mysql://, sqlite://)")
+		return driverName, normalizedConnStr, err
+	}
+
+	return driverName, normalizedConnStr, err
+}
+
+// LoadDatabaseClients scans environment variables and creates database clients.
+// It looks for patterns like DATABASE_<NAME>_URL where <NAME> is the database identifier.
+// For each database, it also looks for DATABASE_<NAME>_USERNAME and DATABASE_<NAME>_PASSWORD.
+// The legacy DATABASE_URL is loaded as the "default" database for backward compatibility.
+func LoadDatabaseClients(logger *slog.Logger) (clients map[string]*DatabaseClient, err error) {
+	clients = make(map[string]*DatabaseClient)
+
+	// First, try to load the legacy DATABASE_URL as "default"
+	legacyURL := os.Getenv("DATABASE_URL")
+	if legacyURL == "" {
+		legacyURL = os.Getenv("DB_CONNECTION_STRING")
+	}
+
+	if legacyURL != "" {
+		config := DatabaseClientConfig{
+			Name:     "default",
+			URL:      legacyURL,
+			Username: os.Getenv("DATABASE_USERNAME"),
+			Password: os.Getenv("DATABASE_PASSWORD"),
+		}
+
+		var client *DatabaseClient
+		client, err = NewDatabaseClientWithConfig(config, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize default database",
+				slog.String("error", err.Error()))
+		} else {
+			clients["default"] = client
+		}
+	}
+
+	// Scan for DATABASE_<NAME>_URL patterns
+	dbConfigs := scanDatabaseEnvVars(logger)
+
+	for name, config := range dbConfigs {
+		// Skip if we already loaded this as default
+		if name == "default" {
+			continue
+		}
+
+		var client *DatabaseClient
+		client, err = NewDatabaseClientWithConfig(config, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize database",
+				slog.String("name", name),
+				slog.String("error", err.Error()))
+			continue
+		}
+
+		clients[name] = client
+	}
+
+	// Reset err since individual failures are logged but shouldn't fail the whole operation
+	err = nil
+
+	if len(clients) == 0 {
+		logger.Info("No database clients configured")
+	} else {
+		logger.Info("Database clients loaded", slog.Int("count", len(clients)))
+	}
+
+	return clients, err
+}
+
+// scanDatabaseEnvVars scans environment variables for DATABASE_<NAME>_URL patterns.
+func scanDatabaseEnvVars(logger *slog.Logger) (configs map[string]DatabaseClientConfig) {
+	configs = make(map[string]DatabaseClientConfig)
+
+	for _, env := range os.Environ() {
+		// Split on first '=' to get key and value
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := parts[0]
+
+		// Check if this is a DATABASE_<NAME>_URL pattern
+		if !strings.HasPrefix(key, databaseEnvPrefix) || !strings.HasSuffix(key, databaseURLSuffix) {
+			continue
+		}
+
+		// Skip the legacy DATABASE_URL (handled separately)
+		if key == "DATABASE_URL" {
+			continue
+		}
+
+		// Extract the database name: DATABASE_<NAME>_URL -> <NAME>
+		name := key[len(databaseEnvPrefix) : len(key)-len(databaseURLSuffix)]
+		if name == "" {
+			continue
+		}
+
+		// Normalize to lowercase for consistency
+		name = strings.ToLower(name)
+
+		// Get the URL value
+		url := os.Getenv(key)
+		if url == "" {
+			continue
+		}
+
+		// Look for corresponding credentials
+		// Try DATABASE_<NAME>_USERNAME first, fall back to DATABASE_USERNAME
+		usernameKey := fmt.Sprintf("DATABASE_%s_USERNAME", strings.ToUpper(name))
+		passwordKey := fmt.Sprintf("DATABASE_%s_PASSWORD", strings.ToUpper(name))
+
+		username := os.Getenv(usernameKey)
+		password := os.Getenv(passwordKey)
+
+		logger.Debug("Found database configuration",
+			slog.String("name", name),
+			slog.String("url_key", key),
+			slog.Bool("has_username", username != ""),
+			slog.Bool("has_password", password != ""))
+
+		configs[name] = DatabaseClientConfig{
+			Name:     name,
+			URL:      url,
+			Username: username,
+			Password: password,
+		}
+	}
+
+	return configs
+}
+
+// GetAvailableDatabases returns information about all configured databases.
+func GetAvailableDatabases(clients map[string]*DatabaseClient) (databases []DatabaseInfo) {
+	databases = make([]DatabaseInfo, 0, len(clients))
+
+	for name, client := range clients {
+		databases = append(databases, DatabaseInfo{
+			Name:      name,
+			Available: client != nil && client.db != nil,
+		})
+	}
+
+	return databases
 }
 
 // Close closes the database connection.

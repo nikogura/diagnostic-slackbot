@@ -663,115 +663,414 @@ func (q QueryResult) MarshalJSON() (result []byte, err error) {
 
 // TestInterpolateCredentials tests credential interpolation in connection strings.
 func TestInterpolateCredentials(t *testing.T) {
-	// Cannot use t.Parallel() with t.Setenv()
+	t.Parallel()
 
 	tests := []struct {
 		name     string
 		connStr  string
-		envVars  map[string]string
+		username string
+		password string
 		expected string
 	}{
 		{
 			name:     "no_placeholders",
 			connStr:  "postgres://user:pass@localhost:5432/testdb",
-			envVars:  map[string]string{},
+			username: "",
+			password: "",
 			expected: "postgres://user:pass@localhost:5432/testdb",
 		},
 		{
-			name:    "curly_brace_placeholders",
-			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
-			envVars: map[string]string{
-				"DATABASE_USERNAME": "myuser",
-				"DATABASE_PASSWORD": "mypass",
-			},
+			name:     "curly_brace_placeholders",
+			connStr:  "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			username: "myuser",
+			password: "mypass",
 			expected: "postgres://myuser:mypass@localhost:5432/testdb",
 		},
 		{
-			name:    "dollar_sign_placeholders",
-			connStr: "postgres://${USERNAME}:${PASSWORD}@localhost:5432/testdb",
-			envVars: map[string]string{
-				"DATABASE_USERNAME": "myuser",
-				"DATABASE_PASSWORD": "mypass",
-			},
+			name:     "dollar_sign_placeholders",
+			connStr:  "postgres://${USERNAME}:${PASSWORD}@localhost:5432/testdb",
+			username: "myuser",
+			password: "mypass",
 			expected: "postgres://myuser:mypass@localhost:5432/testdb",
 		},
 		{
-			name:    "mixed_placeholders",
-			connStr: "postgres://{{USERNAME}}:${PASSWORD}@localhost:5432/testdb",
-			envVars: map[string]string{
-				"DATABASE_USERNAME": "myuser",
-				"DATABASE_PASSWORD": "mypass",
-			},
+			name:     "mixed_placeholders",
+			connStr:  "postgres://{{USERNAME}}:${PASSWORD}@localhost:5432/testdb",
+			username: "myuser",
+			password: "mypass",
 			expected: "postgres://myuser:mypass@localhost:5432/testdb",
 		},
 		{
 			name:     "placeholders_without_credentials",
 			connStr:  "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
-			envVars:  map[string]string{},
+			username: "",
+			password: "",
 			expected: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
 		},
 		{
-			name:    "only_username_set",
-			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
-			envVars: map[string]string{
-				"DATABASE_USERNAME": "myuser",
-			},
+			name:     "only_username_set",
+			connStr:  "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			username: "myuser",
+			password: "",
 			expected: "postgres://myuser:{{PASSWORD}}@localhost:5432/testdb",
 		},
 		{
-			name:    "only_password_set",
-			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
-			envVars: map[string]string{
-				"DATABASE_PASSWORD": "mypass",
-			},
+			name:     "only_password_set",
+			connStr:  "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			username: "",
+			password: "mypass",
 			expected: "postgres://{{USERNAME}}:mypass@localhost:5432/testdb",
 		},
 		{
-			name:    "credentials_set_but_no_placeholders",
-			connStr: "postgres://hardcoded:creds@localhost:5432/testdb",
-			envVars: map[string]string{
-				"DATABASE_USERNAME": "myuser",
-				"DATABASE_PASSWORD": "mypass",
-			},
+			name:     "credentials_set_but_no_placeholders",
+			connStr:  "postgres://hardcoded:creds@localhost:5432/testdb",
+			username: "myuser",
+			password: "mypass",
 			expected: "postgres://hardcoded:creds@localhost:5432/testdb",
 		},
 		{
-			name:    "special_characters_in_password",
-			connStr: "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
-			envVars: map[string]string{
-				"DATABASE_USERNAME": "myuser",
-				"DATABASE_PASSWORD": "p@ss!w0rd#123",
-			},
+			name:     "special_characters_in_password",
+			connStr:  "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			username: "myuser",
+			password: "p@ss!w0rd#123",
 			expected: "postgres://myuser:p@ss!w0rd#123@localhost:5432/testdb",
 		},
 		{
-			name:    "mysql_connection_string",
-			connStr: "mysql://{{USERNAME}}:{{PASSWORD}}@localhost:3306/testdb",
-			envVars: map[string]string{
-				"DATABASE_USERNAME": "myuser",
-				"DATABASE_PASSWORD": "mypass",
-			},
+			name:     "mysql_connection_string",
+			connStr:  "mysql://{{USERNAME}}:{{PASSWORD}}@localhost:3306/testdb",
+			username: "myuser",
+			password: "mypass",
 			expected: "mysql://myuser:mypass@localhost:3306/testdb",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Cannot use t.Parallel() with t.Setenv()
-
-			// Clear any existing env vars first
-			t.Setenv("DATABASE_USERNAME", "")
-			t.Setenv("DATABASE_PASSWORD", "")
-
-			// Set test-specific environment variables
-			for k, v := range tt.envVars {
-				t.Setenv(k, v)
-			}
+			t.Parallel()
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-			result := interpolateCredentials(tt.connStr, logger)
+			result := interpolateCredentials(tt.connStr, tt.username, tt.password, logger)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// TestParseConnectionString tests connection string parsing and driver detection.
+func TestParseConnectionString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		connStr        string
+		expectedDriver string
+		expectedConn   string
+		expectError    bool
+	}{
+		{
+			name:           "postgres_url",
+			connStr:        "postgres://user:pass@localhost:5432/testdb",
+			expectedDriver: "postgres",
+			expectedConn:   "postgres://user:pass@localhost:5432/testdb",
+			expectError:    false,
+		},
+		{
+			name:           "postgresql_url",
+			connStr:        "postgresql://user:pass@localhost:5432/testdb",
+			expectedDriver: "postgres",
+			expectedConn:   "postgres://user:pass@localhost:5432/testdb",
+			expectError:    false,
+		},
+		{
+			name:           "postgres_libpq_format",
+			connStr:        "host=localhost dbname=testdb user=user password=pass",
+			expectedDriver: "postgres",
+			expectedConn:   "host=localhost dbname=testdb user=user password=pass",
+			expectError:    false,
+		},
+		{
+			name:           "mysql_url",
+			connStr:        "mysql://user:pass@localhost:3306/testdb",
+			expectedDriver: "mysql",
+			expectedConn:   "user:pass@localhost:3306/testdb",
+			expectError:    false,
+		},
+		{
+			name:           "sqlite_url",
+			connStr:        "sqlite:///tmp/test.db",
+			expectedDriver: "sqlite3",
+			expectedConn:   "/tmp/test.db",
+			expectError:    false,
+		},
+		{
+			name:           "sqlite3_url",
+			connStr:        "sqlite3:///tmp/test.db",
+			expectedDriver: "sqlite3",
+			expectedConn:   "/tmp/test.db",
+			expectError:    false,
+		},
+		{
+			name:           "sqlite_file_extension",
+			connStr:        "/tmp/test.db",
+			expectedDriver: "sqlite3",
+			expectedConn:   "/tmp/test.db",
+			expectError:    false,
+		},
+		{
+			name:           "sqlite_extension",
+			connStr:        "/tmp/test.sqlite",
+			expectedDriver: "sqlite3",
+			expectedConn:   "/tmp/test.sqlite",
+			expectError:    false,
+		},
+		{
+			name:        "unsupported_format",
+			connStr:     "mongodb://localhost:27017/testdb",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			driver, conn, err := parseConnectionString(tt.connStr)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedDriver, driver)
+			assert.Equal(t, tt.expectedConn, conn)
+		})
+	}
+}
+
+// TestScanDatabaseEnvVars tests environment variable scanning for database configurations.
+func TestScanDatabaseEnvVars(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv()
+
+	t.Run("multiple_databases", func(t *testing.T) {
+		// Set up environment variables
+		t.Setenv("DATABASE_TERRACE_URL", "postgres://localhost:5432/terrace")
+		t.Setenv("DATABASE_TERRACE_USERNAME", "terrace_user")
+		t.Setenv("DATABASE_TERRACE_PASSWORD", "terrace_pass")
+		t.Setenv("DATABASE_MDS_URL", "postgres://localhost:5432/mds")
+		t.Setenv("DATABASE_MDS_USERNAME", "mds_user")
+
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		configs := scanDatabaseEnvVars(logger)
+
+		// Should have two database configurations
+		assert.Len(t, configs, 2)
+
+		// Check terrace config
+		terraceConfig, ok := configs["terrace"]
+		require.True(t, ok, "terrace config should exist")
+		assert.Equal(t, "terrace", terraceConfig.Name)
+		assert.Equal(t, "postgres://localhost:5432/terrace", terraceConfig.URL)
+		assert.Equal(t, "terrace_user", terraceConfig.Username)
+		assert.Equal(t, "terrace_pass", terraceConfig.Password)
+
+		// Check mds config
+		mdsConfig, ok := configs["mds"]
+		require.True(t, ok, "mds config should exist")
+		assert.Equal(t, "mds", mdsConfig.Name)
+		assert.Equal(t, "postgres://localhost:5432/mds", mdsConfig.URL)
+		assert.Equal(t, "mds_user", mdsConfig.Username)
+		assert.Empty(t, mdsConfig.Password) // Not set
+	})
+
+	t.Run("skips_legacy_database_url", func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "postgres://localhost:5432/default")
+		t.Setenv("DATABASE_TERRACE_URL", "postgres://localhost:5432/terrace")
+
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		configs := scanDatabaseEnvVars(logger)
+
+		// Should only have terrace, not the legacy DATABASE_URL
+		assert.Len(t, configs, 1)
+		_, ok := configs["terrace"]
+		assert.True(t, ok)
+		_, ok = configs["default"]
+		assert.False(t, ok)
+	})
+
+	t.Run("case_normalization", func(t *testing.T) {
+		t.Setenv("DATABASE_MYDB_URL", "postgres://localhost:5432/mydb")
+
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		configs := scanDatabaseEnvVars(logger)
+
+		// Should normalize to lowercase
+		_, ok := configs["mydb"]
+		assert.True(t, ok)
+	})
+}
+
+// TestGetAvailableDatabases tests the database info retrieval function.
+func TestGetAvailableDatabases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with_clients", func(t *testing.T) {
+		t.Parallel()
+
+		// Create mock clients map
+		clients := map[string]*DatabaseClient{
+			"terrace": {name: "terrace"},
+			"mds":     {name: "mds"},
+		}
+
+		databases := GetAvailableDatabases(clients)
+
+		assert.Len(t, databases, 2)
+
+		// Create a map for easier lookup
+		dbMap := make(map[string]DatabaseInfo)
+		for _, db := range databases {
+			dbMap[db.Name] = db
+		}
+
+		assert.Contains(t, dbMap, "terrace")
+		assert.Contains(t, dbMap, "mds")
+	})
+
+	t.Run("empty_clients", func(t *testing.T) {
+		t.Parallel()
+
+		clients := map[string]*DatabaseClient{}
+
+		databases := GetAvailableDatabases(clients)
+
+		assert.Empty(t, databases)
+	})
+}
+
+// TestDatabaseClientConfig tests the DatabaseClientConfig struct.
+func TestDatabaseClientConfig(t *testing.T) {
+	t.Parallel()
+
+	config := DatabaseClientConfig{
+		Name:     "terrace",
+		URL:      "postgres://localhost:5432/terrace",
+		Username: "user",
+		Password: "pass",
+	}
+
+	assert.Equal(t, "terrace", config.Name)
+	assert.Equal(t, "postgres://localhost:5432/terrace", config.URL)
+	assert.Equal(t, "user", config.Username)
+	assert.Equal(t, "pass", config.Password)
+}
+
+// TestNewDatabaseClientWithConfig tests creating a database client with explicit config.
+func TestNewDatabaseClientWithConfig(t *testing.T) {
+	// Cannot use t.Parallel() - tests database connections
+
+	t.Run("empty_url", func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		config := DatabaseClientConfig{
+			Name: "test",
+			URL:  "",
+		}
+
+		_, err := NewDatabaseClientWithConfig(config, logger)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "database URL is required")
+	})
+
+	t.Run("unsupported_format", func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		config := DatabaseClientConfig{
+			Name: "test",
+			URL:  "mongodb://localhost:27017/testdb",
+		}
+
+		_, err := NewDatabaseClientWithConfig(config, logger)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported database connection string format")
+	})
+
+	t.Run("valid_postgres_config", func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		config := DatabaseClientConfig{
+			Name:     "test",
+			URL:      "postgres://user:pass@localhost:5432/testdb",
+			Username: "",
+			Password: "",
+		}
+
+		// This will fail to connect since there's no real database
+		client, err := NewDatabaseClientWithConfig(config, logger)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ping database")
+
+		if client != nil {
+			_ = client.Close()
+		}
+	})
+
+	t.Run("with_credential_interpolation", func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		config := DatabaseClientConfig{
+			Name:     "test",
+			URL:      "postgres://{{USERNAME}}:{{PASSWORD}}@localhost:5432/testdb",
+			Username: "myuser",
+			Password: "mypass",
+		}
+
+		// This will fail to connect since there's no real database
+		// But it should attempt to connect with interpolated credentials
+		client, err := NewDatabaseClientWithConfig(config, logger)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ping database")
+
+		if client != nil {
+			_ = client.Close()
+		}
+	})
+}
+
+// TestLoadDatabaseClients tests loading multiple database clients from environment.
+func TestLoadDatabaseClients(t *testing.T) {
+	// Cannot use t.Parallel() with t.Setenv()
+
+	t.Run("no_databases_configured", func(t *testing.T) {
+		// Clear all database-related env vars
+		t.Setenv("DATABASE_URL", "")
+		t.Setenv("DB_CONNECTION_STRING", "")
+
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		clients, err := LoadDatabaseClients(logger)
+		require.NoError(t, err)
+		assert.Empty(t, clients)
+	})
+
+	t.Run("legacy_database_url_only", func(t *testing.T) {
+		t.Setenv("DATABASE_URL", "sqlite:///tmp/test_legacy.db")
+
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		clients, err := LoadDatabaseClients(logger)
+		require.NoError(t, err)
+
+		// SQLite should connect successfully
+		if len(clients) > 0 {
+			assert.Contains(t, clients, "default")
+			// Clean up
+			for _, client := range clients {
+				_ = client.Close()
+			}
+		}
+	})
 }
