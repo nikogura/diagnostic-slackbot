@@ -24,6 +24,9 @@ const (
 	// Environment variable prefixes.
 	databaseEnvPrefix = "DATABASE_"
 	databaseURLSuffix = "_URL"
+
+	// databaseEndpointDefault is the name for the default/legacy database.
+	databaseEndpointDefault = "default"
 )
 
 // DatabaseClient handles read-only database queries.
@@ -101,7 +104,7 @@ func NewDatabaseClient(logger *slog.Logger) (result *DatabaseClient, err error) 
 	password := os.Getenv("DATABASE_PASSWORD")
 
 	config := DatabaseClientConfig{
-		Name:     "default",
+		Name:     databaseEndpointDefault,
 		URL:      connStr,
 		Username: username,
 		Password: password,
@@ -215,7 +218,7 @@ func LoadDatabaseClients(logger *slog.Logger) (clients map[string]*DatabaseClien
 
 	if legacyURL != "" {
 		config := DatabaseClientConfig{
-			Name:     "default",
+			Name:     databaseEndpointDefault,
 			URL:      legacyURL,
 			Username: os.Getenv("DATABASE_USERNAME"),
 			Password: os.Getenv("DATABASE_PASSWORD"),
@@ -227,7 +230,7 @@ func LoadDatabaseClients(logger *slog.Logger) (clients map[string]*DatabaseClien
 			logger.Warn("Failed to initialize default database",
 				slog.String("error", err.Error()))
 		} else {
-			clients["default"] = client
+			clients[databaseEndpointDefault] = client
 		}
 	}
 
@@ -236,7 +239,7 @@ func LoadDatabaseClients(logger *slog.Logger) (clients map[string]*DatabaseClien
 
 	for name, config := range dbConfigs {
 		// Skip if we already loaded this as default
-		if name == "default" {
+		if name == databaseEndpointDefault {
 			continue
 		}
 

@@ -42,16 +42,18 @@ const (
 	toolGrafanaUpdateDashboard = "grafana_update_dashboard"
 	toolGrafanaDeleteDashboard = "grafana_delete_dashboard"
 	// CloudWatch Logs tools are defined in cloudwatch.go.
+	// Prometheus tools are defined in prometheus.go.
 )
 
 // Server implements the MCP (Model Context Protocol) server.
 type Server struct {
-	lokiClient    *k8s.LokiClient
-	githubClient  *github.Client
-	dbClients     map[string]*DatabaseClient
-	grafanaClient *GrafanaClient
-	logger        *slog.Logger
-	companyName   string
+	lokiClient        *k8s.LokiClient
+	githubClient      *github.Client
+	dbClients         map[string]*DatabaseClient
+	grafanaClient     *GrafanaClient
+	prometheusClients map[string]*PrometheusClient
+	logger            *slog.Logger
+	companyName       string
 }
 
 // NewServer creates a new MCP server.
@@ -106,6 +108,10 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 		logger.Info("GRAFANA_URL or GRAFANA_API_KEY not provided - Grafana tools will be unavailable")
 	}
 
+	// Initialize Prometheus clients from environment variables
+	// Supports PROMETHEUS_URL (default) and PROMETHEUS_<NAME>_URL patterns
+	prometheusClients := LoadPrometheusClients(logger)
+
 	// Get company name from environment, default to "Company"
 	companyName := os.Getenv("COMPANY_NAME")
 	if companyName == "" {
@@ -113,12 +119,13 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 	}
 
 	result = &Server{
-		lokiClient:    lokiClient,
-		githubClient:  githubClient,
-		dbClients:     dbClients,
-		grafanaClient: grafanaClient,
-		logger:        logger,
-		companyName:   companyName,
+		lokiClient:        lokiClient,
+		githubClient:      githubClient,
+		dbClients:         dbClients,
+		grafanaClient:     grafanaClient,
+		prometheusClients: prometheusClients,
+		logger:            logger,
+		companyName:       companyName,
 	}
 
 	return result
@@ -633,6 +640,7 @@ func getToolDefinitions() (result []MCPTool) {
 	result = append(result, getDatabaseTools()...)
 	result = append(result, getGrafanaTools()...)
 	result = append(result, getCloudWatchTools()...)
+	result = append(result, getPrometheusTools()...)
 
 	return result
 }
@@ -713,6 +721,16 @@ func (s *Server) dispatchToolCall(ctx context.Context, toolName string, args map
 		result, err = s.executeCloudWatchLogsListGroups(ctx, args)
 	case toolCloudWatchLogsGetEvents:
 		result, err = s.executeCloudWatchLogsGetEvents(ctx, args)
+	case toolPrometheusQuery:
+		result, err = s.executePrometheusQuery(ctx, args)
+	case toolPrometheusQueryRange:
+		result, err = s.executePrometheusQueryRange(ctx, args)
+	case toolPrometheusSeries:
+		result, err = s.executePrometheusSeries(ctx, args)
+	case toolPrometheusLabelValues:
+		result, err = s.executePrometheusLabelValues(ctx, args)
+	case toolPrometheusListEndpoints:
+		result, err = s.executePrometheusListEndpoints(ctx, args)
 	default:
 		err = fmt.Errorf("unknown tool: %s", toolName)
 	}

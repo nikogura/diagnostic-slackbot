@@ -282,8 +282,8 @@ func TestProcessRequestToolsList(t *testing.T) {
 		t.Fatal("processRequest(tools/list) tools is not []MCPTool")
 	}
 
-	// Should have all 17 tools (including 3 CloudWatch tools and 2 Database tools)
-	expectedCount := 17
+	// Should have all 22 tools (including 3 CloudWatch tools, 2 Database tools, and 5 Prometheus tools)
+	expectedCount := 22
 	if len(toolsList) != expectedCount {
 		t.Errorf("processRequest(tools/list) returned %d tools, want %d", len(toolsList), expectedCount)
 	}

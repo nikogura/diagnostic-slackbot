@@ -392,6 +392,21 @@ func (h *HTTPServer) executeTool(ctx context.Context, params MCPToolCallParams) 
 	case toolCloudWatchLogsGetEvents:
 		result, err = h.server.executeCloudWatchLogsGetEvents(ctx, params.Arguments)
 
+	case toolPrometheusQuery:
+		result, err = h.server.executePrometheusQuery(ctx, params.Arguments)
+
+	case toolPrometheusQueryRange:
+		result, err = h.server.executePrometheusQueryRange(ctx, params.Arguments)
+
+	case toolPrometheusSeries:
+		result, err = h.server.executePrometheusSeries(ctx, params.Arguments)
+
+	case toolPrometheusLabelValues:
+		result, err = h.server.executePrometheusLabelValues(ctx, params.Arguments)
+
+	case toolPrometheusListEndpoints:
+		result, err = h.server.executePrometheusListEndpoints(ctx, params.Arguments)
+
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)
 	}

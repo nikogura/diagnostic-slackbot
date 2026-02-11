@@ -91,8 +91,8 @@ func TestGetToolDefinitions(t *testing.T) {
 
 	tools := getToolDefinitions()
 
-	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 2 Database + 5 Grafana + 3 CloudWatch = 17 total)
-	expectedCount := 17
+	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 2 Database + 5 Grafana + 3 CloudWatch + 5 Prometheus = 22 total)
+	expectedCount := 22
 	if len(tools) != expectedCount {
 		t.Errorf("getToolDefinitions() returned %d tools, want %d", len(tools), expectedCount)
 	}
@@ -116,6 +116,11 @@ func TestGetToolDefinitions(t *testing.T) {
 		"cloudwatch_logs_query",
 		"cloudwatch_logs_list_groups",
 		"cloudwatch_logs_get_events",
+		"prometheus_query",
+		"prometheus_query_range",
+		"prometheus_series",
+		"prometheus_label_values",
+		"prometheus_list_endpoints",
 	}
 
 	toolMap := make(map[string]bool)
