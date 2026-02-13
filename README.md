@@ -444,7 +444,7 @@ The bot uses Claude Code CLI with a custom MCP (Model Context Protocol) server t
 
 ### Architecture
 
-The MCP server (`cmd/mcp-server/main.go`) is compiled as a separate binary and registered with Claude Code at container startup via `entrypoint.sh`. It communicates with Claude Code using JSON-RPC over stdio transport.
+The MCP server runs as a persistent HTTP/SSE server (started by the bot on port 8090) and is registered with Claude Code at container startup via `entrypoint.sh`. It communicates with Claude Code using JSON-RPC over HTTP/SSE transport for better performance and connection pooling.
 
 ## Configuration
 
@@ -462,6 +462,8 @@ The bot is configured via environment variables:
 - `LOKI_ENDPOINT` - Loki gateway endpoint (default: `http://loki-gateway.logging.svc.cluster.local`)
 - `COMPANY_NAME` - Company name for PDF report branding (default: `Company`)
 - `FILE_RETENTION` - File cleanup interval (default: `24h`)
+- `MCP_HTTP_ENABLED` - Enable HTTP/SSE MCP server (default: `false`, set to `true` for production)
+- `MCP_HTTP_PORT` - Port for HTTP MCP server (default: `8090`)
 - `GITHUB_TOKEN` - Personal access token for GitHub tools (optional)
 - `AWS_*` - AWS credentials for ECR vulnerability scanning (optional)
 - `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for CloudWatch queries (optional). If not set, uses the workload's default credentials (IRSA, instance profile, etc.)

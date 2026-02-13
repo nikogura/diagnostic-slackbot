@@ -9,17 +9,17 @@ chmod 644 /home/bot/.claude/mcp.json
 
 echo "MCP config copied to /home/bot/.claude/mcp.json"
 
-# Register MCP server automatically
-# This is required because Claude Code in --print mode doesn't auto-discover from .mcp.json
+# Register MCP HTTP/SSE server
+# Using HTTP/SSE transport for better performance (persistent connection, no process spawning)
 cd /app
-echo "Registering MCP server with Claude Code..."
-claude mcp add --transport stdio diagnostic /app/mcp-server
+echo "Registering MCP HTTP/SSE server with Claude Code..."
+claude mcp add --transport sse diagnostic http://localhost:8090/sse
 
 # Verify registration
 echo "Verifying MCP server registration..."
 claude mcp list
 
-echo "MCP server setup complete"
+echo "MCP HTTP/SSE server setup complete"
 
-# Execute the main binary
+# Execute the main binary (which starts both Slack bot and HTTP MCP server)
 exec /app/diagnostic-slackbot "$@"
