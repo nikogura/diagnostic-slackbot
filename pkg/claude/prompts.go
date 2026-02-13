@@ -8,12 +8,12 @@ import (
 )
 
 // BuildSystemPrompt constructs the system prompt for Claude including the investigation
-// template, engineering standards, and context documents.
-func BuildSystemPrompt(template *investigations.InvestigationTemplate, engineeringStandards string, contextDocs map[string]string) (result string) {
+// skill, engineering standards, and context documents.
+func BuildSystemPrompt(skill *investigations.InvestigationSkill, engineeringStandards string, contextDocs map[string]string) (result string) {
 	var builder strings.Builder
 
 	// Investigation-specific prompt
-	builder.WriteString(template.InitialPrompt)
+	builder.WriteString(skill.InitialPrompt)
 	builder.WriteString("\n\n")
 
 	// Engineering standards

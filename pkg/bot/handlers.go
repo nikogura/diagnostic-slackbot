@@ -115,7 +115,7 @@ func (b *Bot) startInvestigation(ctx context.Context, channel string, threadTS s
 	// Inform user which investigation is starting
 	investigationType := string(matchResult.InvestigationType)
 	investigationMessage := fmt.Sprintf("Starting **%s** investigation: *%s*",
-		investigationType, matchResult.Template.Name)
+		investigationType, matchResult.Skill.Name)
 
 	_, _, err = b.slackClient.PostMessage(
 		channel,
@@ -127,7 +127,7 @@ func (b *Bot) startInvestigation(ctx context.Context, channel string, threadTS s
 	}
 
 	// Run investigation via Claude Code
-	investigationResult, err := b.claudeCodeRunner.RunInvestigation(ctx, matchResult.Template, message)
+	investigationResult, err := b.claudeCodeRunner.RunInvestigation(ctx, matchResult.Skill, message)
 	if err != nil {
 		b.sendErrorMessage(channel, threadTS, fmt.Sprintf("Error starting investigation: %v", err))
 		return
@@ -185,15 +185,15 @@ func (b *Bot) handleThreadReply(ctx context.Context, channel string, threadTS st
 		slog.String("type", string(conv.InvestigationType)),
 		slog.String("user", userID))
 
-	// Get the investigation template
-	template, err := b.templateLibrary.GetTemplate(conv.InvestigationType)
+	// Get the investigation skill
+	skill, err := b.skillLibrary.GetSkill(conv.InvestigationType)
 	if err != nil {
-		b.sendErrorMessage(channel, threadTS, fmt.Sprintf("Error loading template: %v", err))
+		b.sendErrorMessage(channel, threadTS, fmt.Sprintf("Error loading skill: %v", err))
 		return
 	}
 
 	// Run follow-up investigation via Claude Code
-	investigationResult, err := b.claudeCodeRunner.RunInvestigation(ctx, template, message)
+	investigationResult, err := b.claudeCodeRunner.RunInvestigation(ctx, skill, message)
 	if err != nil {
 		b.sendErrorMessage(channel, threadTS, fmt.Sprintf("Error processing follow-up: %v", err))
 		return

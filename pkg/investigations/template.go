@@ -58,8 +58,10 @@ func (r *K8sResource) SinceDuration() (result time.Duration, err error) {
 	return result, err
 }
 
-// InvestigationTemplate defines the structure of an investigation workflow.
-type InvestigationTemplate struct {
+// InvestigationSkill defines the structure of an investigation skill.
+// Each skill encapsulates domain-specific diagnostic expertise with trigger patterns,
+// specialized prompts, and tool access for autonomous investigation workflows.
+type InvestigationSkill struct {
 	Name                string        `yaml:"name"`
 	Description         string        `yaml:"description"`
 	TriggerPatterns     []string      `yaml:"trigger_patterns"`
@@ -72,28 +74,28 @@ type InvestigationTemplate struct {
 	triggerRegexes []*regexp.Regexp
 }
 
-// LoadTemplate loads an investigation template from a YAML file.
-func LoadTemplate(filePath string) (result *InvestigationTemplate, err error) {
+// LoadSkill loads an investigation skill from a YAML file.
+func LoadSkill(filePath string) (result *InvestigationSkill, err error) {
 	var data []byte
 
 	data, err = os.ReadFile(filePath)
 	if err != nil {
-		err = fmt.Errorf("reading template file: %w", err)
+		err = fmt.Errorf("reading skill file: %w", err)
 		return result, err
 	}
 
-	var template InvestigationTemplate
+	var skill InvestigationSkill
 
-	err = yaml.Unmarshal(data, &template)
+	err = yaml.Unmarshal(data, &skill)
 	if err != nil {
-		err = fmt.Errorf("parsing template YAML: %w", err)
+		err = fmt.Errorf("parsing skill YAML: %w", err)
 		return result, err
 	}
 
 	// Compile trigger patterns into regexes
-	template.triggerRegexes = make([]*regexp.Regexp, 0, len(template.TriggerPatterns))
+	skill.triggerRegexes = make([]*regexp.Regexp, 0, len(skill.TriggerPatterns))
 
-	for _, pattern := range template.TriggerPatterns {
+	for _, pattern := range skill.TriggerPatterns {
 		var regex *regexp.Regexp
 
 		regex, err = regexp.Compile("(?i)" + pattern)
@@ -102,18 +104,18 @@ func LoadTemplate(filePath string) (result *InvestigationTemplate, err error) {
 			return result, err
 		}
 
-		template.triggerRegexes = append(template.triggerRegexes, regex)
+		skill.triggerRegexes = append(skill.triggerRegexes, regex)
 	}
 
-	result = &template
+	result = &skill
 	return result, err
 }
 
 // Matches checks if the given message matches any of the trigger patterns.
-func (t *InvestigationTemplate) Matches(message string) (result bool) {
+func (s *InvestigationSkill) Matches(message string) (result bool) {
 	normalizedMessage := strings.ToLower(strings.TrimSpace(message))
 
-	for _, regex := range t.triggerRegexes {
+	for _, regex := range s.triggerRegexes {
 		if regex.MatchString(normalizedMessage) {
 			result = true
 			return result
@@ -126,17 +128,17 @@ func (t *InvestigationTemplate) Matches(message string) (result bool) {
 // MatchWithSpecificity checks if the message matches and returns specificity score.
 // Higher scores indicate more specific matches.
 // Returns (matched, specificity, matchedPattern).
-func (t *InvestigationTemplate) MatchWithSpecificity(message string) (matched bool, specificity int, pattern string) {
+func (s *InvestigationSkill) MatchWithSpecificity(message string) (matched bool, specificity int, pattern string) {
 	normalizedMessage := strings.ToLower(strings.TrimSpace(message))
 
 	var bestSpecificity int
 	var bestPattern string
 
-	for i, regex := range t.triggerRegexes {
+	for i, regex := range s.triggerRegexes {
 		if regex.MatchString(normalizedMessage) {
 			matched = true
 			// Calculate specificity: pattern length minus wildcards
-			patternStr := t.TriggerPatterns[i]
+			patternStr := s.TriggerPatterns[i]
 			// Remove common regex metacharacters to get "solid" pattern length
 			solidPattern := strings.ReplaceAll(patternStr, ".*", "")
 			solidPattern = strings.ReplaceAll(solidPattern, ".", "")
@@ -158,23 +160,24 @@ func (t *InvestigationTemplate) MatchWithSpecificity(message string) (matched bo
 	return matched, specificity, pattern
 }
 
-// TemplateLibrary manages a collection of investigation templates.
-type TemplateLibrary struct {
-	templates map[InvestigationType]*InvestigationTemplate
+// SkillLibrary manages a collection of investigation skills.
+// It provides skill selection based on message pattern matching with specificity ranking.
+type SkillLibrary struct {
+	skills map[InvestigationType]*InvestigationSkill
 }
 
-// NewTemplateLibrary creates a new template library by loading all templates
+// NewSkillLibrary creates a new skill library by loading all investigation skills
 // from the specified directory.
-func NewTemplateLibrary(templatesDir string) (result *TemplateLibrary, err error) {
+func NewSkillLibrary(skillsDir string) (result *SkillLibrary, err error) {
 	var entries []os.DirEntry
 
-	lib := &TemplateLibrary{
-		templates: make(map[InvestigationType]*InvestigationTemplate),
+	lib := &SkillLibrary{
+		skills: make(map[InvestigationType]*InvestigationSkill),
 	}
 
-	entries, err = os.ReadDir(templatesDir)
+	entries, err = os.ReadDir(skillsDir)
 	if err != nil {
-		err = fmt.Errorf("reading templates directory: %w", err)
+		err = fmt.Errorf("reading skills directory: %w", err)
 		return result, err
 	}
 
@@ -183,23 +186,23 @@ func NewTemplateLibrary(templatesDir string) (result *TemplateLibrary, err error
 			continue
 		}
 
-		filePath := filepath.Join(templatesDir, entry.Name())
+		filePath := filepath.Join(skillsDir, entry.Name())
 
-		var template *InvestigationTemplate
+		var skill *InvestigationSkill
 
-		template, err = LoadTemplate(filePath)
+		skill, err = LoadSkill(filePath)
 		if err != nil {
-			err = fmt.Errorf("loading template %s: %w", entry.Name(), err)
+			err = fmt.Errorf("loading skill %s: %w", entry.Name(), err)
 			return result, err
 		}
 
 		// Map filename to investigation type
 		investigationType := inferTypeFromFilename(entry.Name())
-		lib.templates[investigationType] = template
+		lib.skills[investigationType] = skill
 	}
 
-	if len(lib.templates) == 0 {
-		err = fmt.Errorf("no valid templates found in %s", templatesDir)
+	if len(lib.skills) == 0 {
+		err = fmt.Errorf("no valid skills found in %s", skillsDir)
 		return result, err
 	}
 
@@ -207,11 +210,11 @@ func NewTemplateLibrary(templatesDir string) (result *TemplateLibrary, err error
 	return result, err
 }
 
-// FindMatchingTemplate finds the most specific template that matches the given message.
-// When multiple templates match, returns the one with highest specificity score.
-func (l *TemplateLibrary) FindMatchingTemplate(message string) (result *InvestigationTemplate, investigationType InvestigationType, err error) {
+// FindMatchingSkill finds the most specific skill that matches the given message.
+// When multiple skills match, returns the one with highest specificity score.
+func (l *SkillLibrary) FindMatchingSkill(message string) (result *InvestigationSkill, investigationType InvestigationType, err error) {
 	type matchInfo struct {
-		template    *InvestigationTemplate
+		skill       *InvestigationSkill
 		invType     InvestigationType
 		specificity int
 		pattern     string
@@ -219,11 +222,11 @@ func (l *TemplateLibrary) FindMatchingTemplate(message string) (result *Investig
 
 	var matches []matchInfo
 
-	for invType, template := range l.templates {
-		matched, specificity, pattern := template.MatchWithSpecificity(message)
+	for invType, skill := range l.skills {
+		matched, specificity, pattern := skill.MatchWithSpecificity(message)
 		if matched {
 			matches = append(matches, matchInfo{
-				template:    template,
+				skill:       skill,
 				invType:     invType,
 				specificity: specificity,
 				pattern:     pattern,
@@ -232,7 +235,7 @@ func (l *TemplateLibrary) FindMatchingTemplate(message string) (result *Investig
 	}
 
 	if len(matches) == 0 {
-		err = errors.New("no matching investigation template found")
+		err = errors.New("no matching investigation skill found")
 		investigationType = InvestigationTypeUnknown
 
 		return result, investigationType, err
@@ -246,36 +249,36 @@ func (l *TemplateLibrary) FindMatchingTemplate(message string) (result *Investig
 		}
 	}
 
-	result = bestMatch.template
+	result = bestMatch.skill
 	investigationType = bestMatch.invType
 
 	return result, investigationType, err
 }
 
-// GetTemplate retrieves a template by its type.
-func (l *TemplateLibrary) GetTemplate(invType InvestigationType) (result *InvestigationTemplate, err error) {
-	template, exists := l.templates[invType]
+// GetSkill retrieves a skill by its type.
+func (l *SkillLibrary) GetSkill(invType InvestigationType) (result *InvestigationSkill, err error) {
+	skill, exists := l.skills[invType]
 	if !exists {
-		err = fmt.Errorf("template not found for type: %s", invType)
+		err = fmt.Errorf("skill not found for type: %s", invType)
 		return result, err
 	}
 
-	result = template
+	result = skill
 	return result, err
 }
 
-// ListTemplates returns all available templates.
-func (l *TemplateLibrary) ListTemplates() (result []InvestigationType) {
-	result = make([]InvestigationType, 0, len(l.templates))
+// ListSkills returns all available investigation skills.
+func (l *SkillLibrary) ListSkills() (result []InvestigationType) {
+	result = make([]InvestigationType, 0, len(l.skills))
 
-	for invType := range l.templates {
+	for invType := range l.skills {
 		result = append(result, invType)
 	}
 
 	return result
 }
 
-// inferTypeFromFilename maps template filenames to investigation types.
+// inferTypeFromFilename maps skill filenames to investigation types.
 func inferTypeFromFilename(filename string) (result InvestigationType) {
 	filename = strings.ToLower(filename)
 

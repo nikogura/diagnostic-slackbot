@@ -31,7 +31,7 @@ type Bot struct {
 	slackClient      *slack.Client
 	socketClient     *socketmode.Client
 	claudeCodeRunner *ClaudeCodeRunner
-	templateLibrary  *investigations.TemplateLibrary
+	skillLibrary     *investigations.SkillLibrary
 	matcher          *investigations.Matcher
 	conversations    *ConversationStore
 	logger           *slog.Logger
@@ -52,17 +52,17 @@ type Config struct {
 
 // NewBot creates a new diagnostic bot.
 func NewBot(cfg Config, logger *slog.Logger) (result *Bot, err error) {
-	var templateLibrary *investigations.TemplateLibrary
+	var skillLibrary *investigations.SkillLibrary
 	var authResp *slack.AuthTestResponse
 
-	// Load templates
-	templateLibrary, err = investigations.NewTemplateLibrary(cfg.InvestigationDir)
+	// Load investigation skills
+	skillLibrary, err = investigations.NewSkillLibrary(cfg.InvestigationDir)
 	if err != nil {
-		err = fmt.Errorf("loading investigation templates: %w", err)
+		err = fmt.Errorf("loading investigation skills: %w", err)
 		return result, err
 	}
 
-	matcher := investigations.NewMatcher(templateLibrary)
+	matcher := investigations.NewMatcher(skillLibrary)
 
 	// Initialize clients
 	slackClient := slack.New(
@@ -98,7 +98,7 @@ func NewBot(cfg Config, logger *slog.Logger) (result *Bot, err error) {
 		slackClient:      slackClient,
 		socketClient:     socketClient,
 		claudeCodeRunner: claudeCodeRunner,
-		templateLibrary:  templateLibrary,
+		skillLibrary:     skillLibrary,
 		matcher:          matcher,
 		conversations:    NewConversationStore(ConversationExpiry),
 		logger:           logger,

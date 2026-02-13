@@ -6,7 +6,7 @@ A Slack bot that enables self-service production diagnostics by integrating Clau
 
 - **Claude Code Integration**: Uses Claude Code CLI with MCP server for advanced tool use capabilities
 - **MCP Server**: Custom tools for Loki queries, K8s access, GitHub integration, ECR scanning, and PDF generation
-- **Investigation Templates**: YAML-based templates define structured investigation workflows
+- **Investigation Skills**: YAML-based templates define structured investigation workflows
 - **Kubernetes Access**: Read-only access to pods, logs, ConfigMaps, Deployments, and Flux CRDs
 - **PDF Report Generation**: Automated professional reports with company branding via Pandoc + LaTeX
 - **Log Sanitization**: Comprehensive PII and secret redaction (13 regex patterns)
@@ -39,8 +39,8 @@ diagnostic-slackbot/
 │   │   ├── client.go                # API client with tool use support
 │   │   ├── tools.go                 # Tool definitions for Claude
 │   │   └── prompts.go               # System prompt construction
-│   ├── investigations/              # Investigation template system
-│   │   ├── template.go              # Template data structures and loading
+│   ├── investigations/              # Investigation skill system
+│   │   ├── template.go              # Skill data structures and loading
 │   │   └── matcher.go               # Message matching logic
 │   ├── k8s/                         # Kubernetes and Loki clients
 │   │   ├── agent.go                 # K8s resource access
@@ -53,7 +53,7 @@ diagnostic-slackbot/
 │   └── metrics/                     # Prometheus metrics
 │       ├── metrics.go               # Metric definitions
 │       └── server.go                # HTTP metrics server
-├── investigations/                  # YAML investigation templates
+├── investigations/                  # YAML investigation skills
 │   ├── modsecurity-block.yaml
 │   ├── atlas-migration.yaml
 │   ├── general-diagnostic.yaml
@@ -72,9 +72,9 @@ diagnostic-slackbot/
 └── go.mod                           # Go module dependencies
 ```
 
-## Investigation Templates
+## Investigation Skills
 
-The bot includes example investigation templates in the `investigations/` directory. These are generic examples with substitution variables for adaptation to your environment.
+The bot includes example investigation skills in the `investigations/` directory. These are generic examples with substitution variables for adaptation to your environment.
 
 ### Included Examples
 
@@ -457,7 +457,7 @@ The bot is configured via environment variables:
 
 **Optional:**
 - `KUBECONFIG` - Path to kubeconfig (default: uses in-cluster config)
-- `INVESTIGATION_DIR` - Path to investigation templates (default: `./investigations`)
+- `INVESTIGATION_DIR` - Path to investigation skills (default: `./investigations`)
 - `CLAUDE_MD_PATH` - Path to engineering standards (default: `./docs/CLAUDE.md`)
 - `LOKI_ENDPOINT` - Loki gateway endpoint (default: `http://loki-gateway.logging.svc.cluster.local`)
 - `COMPANY_NAME` - Company name for PDF report branding (default: `Company`)
