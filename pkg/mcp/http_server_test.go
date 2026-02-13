@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
+	"github.com/nikogura/diagnostic-slackbot/pkg/mcp/auth"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +30,7 @@ func newTestHTTPServer(t *testing.T) (httpServer *HTTPServer) {
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
 	mcpServer := NewServer(lokiClient, "", logger)
-	httpServer = NewHTTPServer(mcpServer, ":0", logger)
+	httpServer = NewHTTPServer(mcpServer, ":0", nil, logger)
 
 	return httpServer
 }
@@ -80,6 +81,122 @@ func TestHandleHealth(t *testing.T) {
 
 	if body["service"] != "diagnostic-mcp" {
 		t.Errorf("handleHealth() service = %v, want diagnostic-mcp", body["service"])
+	}
+}
+
+//nolint:gocognit // Test has many test cases which increases complexity
+func TestHandleAuth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		authToken      string // Server's configured auth token
+		authHeader     string // Client's Authorization header
+		wantStatus     int
+		wantAuth       bool
+		wantErrMessage string
+	}{
+		{
+			name:       "no auth configured - always succeeds",
+			authToken:  "",
+			authHeader: "",
+			wantStatus: http.StatusOK,
+			wantAuth:   true,
+		},
+		{
+			name:       "no auth configured - ignores provided token",
+			authToken:  "",
+			authHeader: "Bearer any-token",
+			wantStatus: http.StatusOK,
+			wantAuth:   true,
+		},
+		{
+			name:           "auth required - missing header",
+			authToken:      "secret-token",
+			authHeader:     "",
+			wantStatus:     http.StatusUnauthorized,
+			wantAuth:       false,
+			wantErrMessage: "all authentication methods failed",
+		},
+		{
+			name:           "auth required - invalid format",
+			authToken:      "secret-token",
+			authHeader:     "InvalidFormat token",
+			wantStatus:     http.StatusUnauthorized,
+			wantAuth:       false,
+			wantErrMessage: "all authentication methods failed",
+		},
+		{
+			name:           "auth required - wrong token",
+			authToken:      "secret-token",
+			authHeader:     "Bearer wrong-token",
+			wantStatus:     http.StatusUnauthorized,
+			wantAuth:       false,
+			wantErrMessage: "all authentication methods failed",
+		},
+		{
+			name:       "auth required - correct token",
+			authToken:  "secret-token",
+			authHeader: "Bearer secret-token",
+			wantStatus: http.StatusOK,
+			wantAuth:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+				Level: slog.LevelError,
+			}))
+
+			lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
+			mcpServer := NewServer(lokiClient, "", logger)
+
+			// Build auth chain from token
+			var authChain *auth.Chain
+			if tt.authToken != "" {
+				methods := []auth.Method{auth.NewStaticTokenAuth(tt.authToken)}
+				authChain = auth.NewChain(methods, logger)
+			}
+
+			httpServer := NewHTTPServer(mcpServer, ":0", authChain, logger)
+
+			req := httptest.NewRequest(http.MethodGet, "/auth", nil)
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			w := httptest.NewRecorder()
+
+			httpServer.handleAuth(w, req)
+
+			resp := w.Result()
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("handleAuth() status = %d, want %d", resp.StatusCode, tt.wantStatus)
+			}
+
+			var body map[string]interface{}
+			decoder := json.NewDecoder(resp.Body)
+			err := decoder.Decode(&body)
+			if err != nil {
+				t.Fatalf("handleAuth() response decode error: %v", err)
+			}
+
+			authenticated, _ := body["authenticated"].(bool)
+			if authenticated != tt.wantAuth {
+				t.Errorf("handleAuth() authenticated = %v, want %v", authenticated, tt.wantAuth)
+			}
+
+			if tt.wantErrMessage != "" {
+				errorMsg, _ := body["error"].(string)
+				if !strings.Contains(errorMsg, tt.wantErrMessage) {
+					t.Errorf("handleAuth() error = %q, want to contain %q", errorMsg, tt.wantErrMessage)
+				}
+			}
+		})
 	}
 }
 
@@ -970,7 +1087,7 @@ func TestHTTPServerRunHTTP(t *testing.T) {
 	// Start server in goroutine
 	errChan := make(chan error, 1)
 	go func() {
-		err := mcpServer.RunHTTP(ctx, "127.0.0.1:0")
+		err := mcpServer.RunHTTP(ctx, "127.0.0.1:0", nil)
 		errChan <- err
 	}()
 
@@ -1084,7 +1201,7 @@ func BenchmarkHandleMessage(b *testing.B) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
 	mcpServer := NewServer(lokiClient, "", logger)
-	httpServer := NewHTTPServer(mcpServer, ":0", logger)
+	httpServer := NewHTTPServer(mcpServer, ":0", nil, logger)
 
 	sess := &session{
 		id:        "bench-session",
@@ -1118,7 +1235,7 @@ func BenchmarkProcessRequest(b *testing.B) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
 	mcpServer := NewServer(lokiClient, "", logger)
-	httpServer := NewHTTPServer(mcpServer, ":0", logger)
+	httpServer := NewHTTPServer(mcpServer, ":0", nil, logger)
 
 	req := MCPRequest{
 		JSONRPC: "2.0",

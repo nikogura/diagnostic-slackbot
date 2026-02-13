@@ -464,6 +464,20 @@ The bot is configured via environment variables:
 - `FILE_RETENTION` - File cleanup interval (default: `24h`)
 - `MCP_HTTP_ENABLED` - Enable HTTP/SSE MCP server (default: `false`, set to `true` for production)
 - `MCP_HTTP_PORT` - Port for HTTP MCP server (default: `8090`)
+
+**MCP Server Authentication** (multiple methods supported, configure one or more):
+- `MCP_AUTH_TOKEN` - Static bearer token for simple authentication (default: empty = no auth)
+- `MCP_JWT_SECRET` - JWT signing secret for JWT bearer token authentication
+- `MCP_JWT_ALGORITHM` - JWT algorithm (default: `HS256`, also supports `RS256`)
+- `MCP_API_KEYS` - API key authentication in format `key1:user1,key2:user2`
+- `MCP_OIDC_ISSUER_URL` - OIDC issuer URL for token validation (e.g., Dex endpoint)
+- `MCP_OIDC_AUDIENCE` - Expected OIDC audience claim
+- `MCP_OIDC_ALLOWED_GROUPS` - Comma-separated list of authorized groups
+- `MCP_OIDC_SKIP_ISSUER_VERIFY` - Skip issuer verification (default: `false`, use only for testing)
+- `MCP_MTLS_CA_CERT_PATH` - Path to CA certificate for mutual TLS authentication
+- `MCP_MTLS_VERIFY_CLIENT` - Verify client certificates against CA (default: `true`)
+
+**Other Services:**
 - `GITHUB_TOKEN` - Personal access token for GitHub tools (optional)
 - `AWS_*` - AWS credentials for ECR vulnerability scanning (optional)
 - `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for CloudWatch queries (optional). If not set, uses the workload's default credentials (IRSA, instance profile, etc.)
