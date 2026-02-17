@@ -7,12 +7,12 @@ import (
 )
 
 func TestMatchWithChannel(t *testing.T) {
-	// Create temporary directory for test templates
+	// Create temporary directory for test skills
 	tmpDir := t.TempDir()
 
-	// Create test investigation templates
+	// Create test investigation skills
 	atlasYAML := `name: "Atlas Migration Test"
-description: "Test template for atlas migrations"
+description: "Test skill for atlas migrations"
 trigger_patterns:
   - "migration.*fail"
   - "database.*migration"
@@ -22,7 +22,7 @@ require_approval: false
 `
 
 	modsecYAML := `name: "ModSecurity Test"
-description: "Test template for modsecurity"
+description: "Test skill for modsecurity"
 trigger_patterns:
   - "waf.*block"
   - "modsec.*fail"
@@ -32,7 +32,7 @@ require_approval: false
 `
 
 	podYAML := `name: "Pod Crash Test"
-description: "Test template for pod crashes"
+description: "Test skill for pod crashes"
 trigger_patterns:
   - "pod.*crash"
   - "crashloop"
@@ -42,7 +42,7 @@ require_approval: false
 `
 
 	generalYAML := `name: "General Diagnostic Test"
-description: "Test template for general diagnostics"
+description: "Test skill for general diagnostics"
 trigger_patterns:
   - "investigate"
   - "diagnostic"
@@ -54,31 +54,31 @@ kubernetes_resources: []
 require_approval: false
 `
 
-	// Write test templates
+	// Write test skills
 	err := os.WriteFile(filepath.Join(tmpDir, "atlas-test.yaml"), []byte(atlasYAML), 0600)
 	if err != nil {
-		t.Fatalf("failed to write atlas test template: %v", err)
+		t.Fatalf("failed to write atlas test skill: %v", err)
 	}
 
 	err = os.WriteFile(filepath.Join(tmpDir, "modsec-test.yaml"), []byte(modsecYAML), 0600)
 	if err != nil {
-		t.Fatalf("failed to write modsec test template: %v", err)
+		t.Fatalf("failed to write modsec test skill: %v", err)
 	}
 
 	err = os.WriteFile(filepath.Join(tmpDir, "pod-crash-test.yaml"), []byte(podYAML), 0600)
 	if err != nil {
-		t.Fatalf("failed to write pod crash test template: %v", err)
+		t.Fatalf("failed to write pod crash test skill: %v", err)
 	}
 
 	err = os.WriteFile(filepath.Join(tmpDir, "general-diagnostic.yaml"), []byte(generalYAML), 0600)
 	if err != nil {
-		t.Fatalf("failed to write general diagnostic test template: %v", err)
+		t.Fatalf("failed to write general diagnostic test skill: %v", err)
 	}
 
-	// Load templates
-	library, err := NewTemplateLibrary(tmpDir)
+	// Load skills
+	library, err := NewSkillLibrary(tmpDir)
 	if err != nil {
-		t.Fatalf("failed to load template library: %v", err)
+		t.Fatalf("failed to load skill library: %v", err)
 	}
 
 	matcher := NewMatcher(library)

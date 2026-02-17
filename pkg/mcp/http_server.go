@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nikogura/diagnostic-slackbot/pkg/mcp/auth"
 )
 
 // HTTPServer wraps an MCP Server with HTTP/SSE transport.
@@ -20,6 +21,7 @@ type HTTPServer struct {
 	httpServer *http.Server
 	sessions   map[string]*session
 	sessionsMu sync.RWMutex
+	authChain  *auth.Chain // Authentication chain
 }
 
 // session represents an active SSE client session.
@@ -31,14 +33,17 @@ type session struct {
 }
 
 // NewHTTPServer creates a new HTTP server wrapping the MCP server.
-func NewHTTPServer(mcpServer *Server, addr string, logger *slog.Logger) (result *HTTPServer) {
+// authChain can be nil to disable authentication.
+func NewHTTPServer(mcpServer *Server, addr string, authChain *auth.Chain, logger *slog.Logger) (result *HTTPServer) {
 	result = &HTTPServer{
-		server:   mcpServer,
-		logger:   logger,
-		sessions: make(map[string]*session),
+		server:    mcpServer,
+		logger:    logger,
+		sessions:  make(map[string]*session),
+		authChain: authChain,
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/auth", result.handleAuth)
 	mux.HandleFunc("/sse", result.handleSSE)
 	mux.HandleFunc("/message", result.handleMessage)
 	mux.HandleFunc("/health", result.handleHealth)
@@ -96,6 +101,42 @@ func (h *HTTPServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 	encoder := json.NewEncoder(w)
 	_ = encoder.Encode(response)
+}
+
+// handleAuth handles authentication requests using the auth chain.
+// If no auth is configured, always returns success (auth disabled).
+func (h *HTTPServer) handleAuth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// If no auth chain configured, authentication is disabled
+	if h.authChain == nil {
+		w.WriteHeader(http.StatusOK)
+		response := map[string]interface{}{
+			"authenticated": true,
+			"message":       "Authentication disabled - no methods configured",
+		}
+		encoder := json.NewEncoder(w)
+		_ = encoder.Encode(response)
+		return
+	}
+
+	// Try authentication
+	result, err := h.authChain.Authenticate(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		response := map[string]interface{}{
+			"authenticated": false,
+			"error":         err.Error(),
+		}
+		encoder := json.NewEncoder(w)
+		_ = encoder.Encode(response)
+		return
+	}
+
+	// Successfully authenticated
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	_ = encoder.Encode(result)
 }
 
 // handleSSE handles Server-Sent Events connections.
@@ -468,8 +509,9 @@ func (s *Server) getServerInfo() (info MCPServerInfo) {
 }
 
 // RunHTTP starts the MCP server with HTTP transport (alternative to stdio Run).
-func (s *Server) RunHTTP(ctx context.Context, addr string) (err error) {
-	httpServer := NewHTTPServer(s, addr, s.logger)
+// If authChain is nil, authentication is disabled.
+func (s *Server) RunHTTP(ctx context.Context, addr string, authChain *auth.Chain) (err error) {
+	httpServer := NewHTTPServer(s, addr, authChain, s.logger)
 
 	// Handle shutdown
 	go func() {

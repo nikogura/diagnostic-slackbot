@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func checkModSecurityTemplate(t *testing.T, tmpl *InvestigationTemplate) {
+func checkModSecurityTemplate(t *testing.T, tmpl *InvestigationSkill) {
 	t.Helper()
 	if tmpl.Name != "ModSecurity Test" {
 		t.Errorf("Name = %q, want %q", tmpl.Name, "ModSecurity Test")
@@ -22,35 +22,35 @@ func checkModSecurityTemplate(t *testing.T, tmpl *InvestigationTemplate) {
 	}
 }
 
-func checkEmptyTriggerPatterns(t *testing.T, tmpl *InvestigationTemplate) {
+func checkEmptyTriggerPatterns(t *testing.T, tmpl *InvestigationSkill) {
 	t.Helper()
 	if len(tmpl.TriggerPatterns) != 0 {
 		t.Errorf("TriggerPatterns length = %d, want 0", len(tmpl.TriggerPatterns))
 	}
 }
 
-func checkEmptyTemplate(t *testing.T, tmpl *InvestigationTemplate) {
+func checkEmptyTemplate(t *testing.T, tmpl *InvestigationSkill) {
 	t.Helper()
 	if tmpl.Name != "" {
 		t.Errorf("Name = %q, want empty string", tmpl.Name)
 	}
 }
 
-func runTemplateTest(t *testing.T, tmpFile string, wantErr bool, checkFunc func(*testing.T, *InvestigationTemplate)) {
+func runTemplateTest(t *testing.T, tmpFile string, wantErr bool, checkFunc func(*testing.T, *InvestigationSkill)) {
 	t.Helper()
 
-	// Load template
-	tmpl, err := LoadTemplate(tmpFile)
+	// Load skill
+	tmpl, err := LoadSkill(tmpFile)
 
 	if wantErr {
 		if err == nil {
-			t.Errorf("LoadTemplate() error = nil, wantErr %v", wantErr)
+			t.Errorf("LoadSkill() error = nil, wantErr %v", wantErr)
 		}
 		return
 	}
 
 	if err != nil {
-		t.Errorf("LoadTemplate() error = %v, wantErr %v", err, wantErr)
+		t.Errorf("LoadSkill() error = %v, wantErr %v", err, wantErr)
 		return
 	}
 
@@ -59,19 +59,19 @@ func runTemplateTest(t *testing.T, tmpFile string, wantErr bool, checkFunc func(
 	}
 }
 
-func TestLoadTemplate(t *testing.T) {
+func TestLoadSkill(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name      string
 		yaml      string
 		wantErr   bool
-		checkFunc func(*testing.T, *InvestigationTemplate)
+		checkFunc func(*testing.T, *InvestigationSkill)
 	}{
 		{
-			name: "valid modsecurity template",
+			name: "valid modsecurity skill",
 			yaml: `name: "ModSecurity Test"
-description: "Test template"
+description: "Test skill"
 trigger_patterns:
   - "modsec"
   - "waf"
@@ -124,21 +124,21 @@ initial_prompt: "Test"
 	}
 }
 
-func TestLoadTemplateFileNotFound(t *testing.T) {
+func TestLoadSkillFileNotFound(t *testing.T) {
 	t.Parallel()
 
-	_, err := LoadTemplate("/nonexistent/file.yaml")
+	_, err := LoadSkill("/nonexistent/file.yaml")
 	if err == nil {
-		t.Error("LoadTemplate() with nonexistent file should return error")
+		t.Error("LoadSkill() with nonexistent file should return error")
 	}
 }
 
 func TestTemplateMatches(t *testing.T) {
 	t.Parallel()
 
-	tmpl, err := LoadTemplate("../../investigations/modsecurity-block.yaml")
+	tmpl, err := LoadSkill("../../investigations/modsecurity-block.yaml")
 	if err != nil {
-		t.Skipf("Skipping test - modsecurity template not found: %v", err)
+		t.Skipf("Skipping test - modsecurity skill not found: %v", err)
 		return
 	}
 
@@ -221,12 +221,12 @@ func TestInvestigationType(t *testing.T) {
 func TestMatchWithSpecificity(t *testing.T) {
 	t.Parallel()
 
-	// Create test templates with different specificity levels
+	// Create test skills with different specificity levels
 	tmpDir := t.TempDir()
 
-	// Specific pattern template
+	// Specific pattern skill
 	specificYAML := `name: "Specific Test"
-description: "Specific template"
+description: "Specific skill"
 trigger_patterns:
   - "database.*migration"
 initial_prompt: "Specific prompt"
@@ -234,12 +234,12 @@ initial_prompt: "Specific prompt"
 	specificFile := filepath.Join(tmpDir, "specific.yaml")
 	err := os.WriteFile(specificFile, []byte(specificYAML), 0600)
 	if err != nil {
-		t.Fatalf("Failed to write specific template: %v", err)
+		t.Fatalf("Failed to write specific skill: %v", err)
 	}
 
-	// Generic pattern template
+	// Generic pattern skill
 	genericYAML := `name: "Generic Test"
-description: "Generic template"
+description: "Generic skill"
 trigger_patterns:
   - "issue"
 initial_prompt: "Generic prompt"
@@ -247,17 +247,17 @@ initial_prompt: "Generic prompt"
 	genericFile := filepath.Join(tmpDir, "generic.yaml")
 	err = os.WriteFile(genericFile, []byte(genericYAML), 0600)
 	if err != nil {
-		t.Fatalf("Failed to write generic template: %v", err)
+		t.Fatalf("Failed to write generic skill: %v", err)
 	}
 
-	specificTmpl, err := LoadTemplate(specificFile)
+	specificTmpl, err := LoadSkill(specificFile)
 	if err != nil {
-		t.Fatalf("Failed to load specific template: %v", err)
+		t.Fatalf("Failed to load specific skill: %v", err)
 	}
 
-	genericTmpl, err := LoadTemplate(genericFile)
+	genericTmpl, err := LoadSkill(genericFile)
 	if err != nil {
-		t.Fatalf("Failed to load generic template: %v", err)
+		t.Fatalf("Failed to load generic skill: %v", err)
 	}
 
 	// Test message that matches both patterns
@@ -268,14 +268,14 @@ initial_prompt: "Generic prompt"
 
 	// Both should match
 	if !specificMatched {
-		t.Error("Specific template should match the message")
+		t.Error("Specific skill should match the message")
 	}
 
 	if !genericMatched {
-		t.Error("Generic template should match the message")
+		t.Error("Generic skill should match the message")
 	}
 
-	// Specific template should have higher score
+	// Specific skill should have higher score
 	if specificScore <= genericScore {
 		t.Errorf("Specific pattern score (%d) should be higher than generic pattern score (%d)",
 			specificScore, genericScore)
@@ -287,13 +287,13 @@ initial_prompt: "Generic prompt"
 		genericMatched, genericScore, genericPattern)
 }
 
-func TestFindMatchingTemplateSpecificity(t *testing.T) {
+func TestFindMatchingSkillSpecificity(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
 
-	// Create multiple templates with overlapping patterns
-	templates := []struct {
+	// Create multiple skills with overlapping patterns
+	skills := []struct {
 		filename string
 		yaml     string
 	}{
@@ -320,38 +320,38 @@ initial_prompt: "General prompt"
 		},
 	}
 
-	for _, tmpl := range templates {
-		filePath := filepath.Join(tmpDir, tmpl.filename)
-		err := os.WriteFile(filePath, []byte(tmpl.yaml), 0600)
+	for _, skill := range skills {
+		filePath := filepath.Join(tmpDir, skill.filename)
+		err := os.WriteFile(filePath, []byte(skill.yaml), 0600)
 		if err != nil {
-			t.Fatalf("Failed to write %s: %v", tmpl.filename, err)
+			t.Fatalf("Failed to write %s: %v", skill.filename, err)
 		}
 	}
 
-	// Load template library
-	lib, err := NewTemplateLibrary(tmpDir)
+	// Load skill library
+	lib, err := NewSkillLibrary(tmpDir)
 	if err != nil {
-		t.Fatalf("Failed to create template library: %v", err)
+		t.Fatalf("Failed to create skill library: %v", err)
 	}
 
 	// Test that specific pattern wins over generic
 	message := "database migration issue in prod"
 
-	// Debug: Check all templates and their specificity scores
-	for invType, tmpl := range lib.templates {
-		matched, specificity, pattern := tmpl.MatchWithSpecificity(message)
-		t.Logf("Template %q (type=%s): matched=%v, specificity=%d, pattern=%q",
-			tmpl.Name, invType, matched, specificity, pattern)
+	// Debug: Check all skills and their specificity scores
+	for invType, skill := range lib.skills {
+		matched, specificity, pattern := skill.MatchWithSpecificity(message)
+		t.Logf("Skill %q (type=%s): matched=%v, specificity=%d, pattern=%q",
+			skill.Name, invType, matched, specificity, pattern)
 	}
 
-	template, invType, err := lib.FindMatchingTemplate(message)
+	skill, invType, err := lib.FindMatchingSkill(message)
 	if err != nil {
-		t.Fatalf("FindMatchingTemplate() error = %v", err)
+		t.Fatalf("FindMatchingSkill() error = %v", err)
 	}
 
-	if template.Name != "Database Migration" {
-		t.Errorf("FindMatchingTemplate() returned %q, want %q",
-			template.Name, "Database Migration")
+	if skill.Name != "Database Migration" {
+		t.Errorf("FindMatchingSkill() returned %q, want %q",
+			skill.Name, "Database Migration")
 	}
 
 	t.Logf("Matched investigation type: %s", invType)

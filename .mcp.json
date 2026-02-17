@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "diagnostic": {
-      "command": "/app/mcp-server",
-      "args": [],
-      "env": {
-        "LOKI_ENDPOINT": "${LOKI_ENDPOINT}"
-      }
+      "url": "http://localhost:8090/sse",
+      "transport": "sse"
     }
   }
 }

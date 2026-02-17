@@ -33,14 +33,14 @@ func NewClaudeCodeRunner(model string, logger *slog.Logger) (result *ClaudeCodeR
 	return result
 }
 
-// RunInvestigation runs Claude Code with the investigation template as the prompt.
-func (r *ClaudeCodeRunner) RunInvestigation(ctx context.Context, template *investigations.InvestigationTemplate, userMessage string) (result string, err error) {
+// RunInvestigation runs Claude Code with the investigation skill as the prompt.
+func (r *ClaudeCodeRunner) RunInvestigation(ctx context.Context, skill *investigations.InvestigationSkill, userMessage string) (result string, err error) {
 	// Build the prompt for Claude Code
-	prompt := r.buildPrompt(template, userMessage)
+	prompt := r.buildPrompt(skill, userMessage)
 
 	// Log investigation start with details
 	r.logger.InfoContext(ctx, "starting Claude Code investigation",
-		slog.String("template", template.Name),
+		slog.String("skill", skill.Name),
 		slog.String("user_message", userMessage),
 		slog.Int("prompt_length", len(prompt)))
 
@@ -96,12 +96,12 @@ func (r *ClaudeCodeRunner) RunInvestigation(ctx context.Context, template *inves
 }
 
 // buildPrompt constructs the full prompt for Claude Code.
-func (r *ClaudeCodeRunner) buildPrompt(template *investigations.InvestigationTemplate, userMessage string) (result string) {
+func (r *ClaudeCodeRunner) buildPrompt(skill *investigations.InvestigationSkill, userMessage string) (result string) {
 	var builder strings.Builder
 
-	// Investigation template prompt
+	// Investigation skill prompt
 	builder.WriteString("# Investigation Task\n\n")
-	builder.WriteString(template.InitialPrompt)
+	builder.WriteString(skill.InitialPrompt)
 	builder.WriteString("\n\n")
 
 	// User's specific request

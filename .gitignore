@@ -53,3 +53,4 @@ kubeconfig
 
 # Generated files
 dist/
+.claude/
