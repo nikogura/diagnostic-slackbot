@@ -35,16 +35,7 @@ func BuildSystemPrompt(skill *investigations.InvestigationSkill, engineeringStan
 	}
 
 	// Tool usage reminder
-	builder.WriteString("# Tool Usage\n\n")
-	builder.WriteString("You have access to the following tools to gather information:\n")
-	builder.WriteString("- `query_loki`: Query Loki for logs (ModSecurity, application logs)\n")
-	builder.WriteString("- `get_k8s_pod_logs`: Fetch pod logs from Kubernetes\n")
-	builder.WriteString("- `get_k8s_resource`: Get K8s resource configs (ConfigMap, Deployment, etc.)\n")
-	builder.WriteString("- `list_k8s_pods`: List pods in a namespace\n")
-	builder.WriteString("- `get_k8s_events`: Get K8s events for troubleshooting\n")
-	builder.WriteString("- `whois_lookup`: Look up IP address geolocation and ISP\n\n")
-	builder.WriteString("Use these tools to gather the information you need to complete your investigation. ")
-	builder.WriteString("You can call multiple tools in sequence to build a complete picture.\n\n")
+	writeToolUsage(&builder)
 
 	// Security reminder
 	builder.WriteString("# Security Reminder\n\n")
@@ -102,4 +93,45 @@ func FormatToolResult(toolName string, result string, err error) (formatted stri
 	isError = false
 
 	return formatted, isError
+}
+
+// writeToolUsage writes the tool usage section of the system prompt.
+func writeToolUsage(builder *strings.Builder) {
+	builder.WriteString("# Tool Usage\n\n")
+	builder.WriteString("You have access to the following tools to gather information:\n\n")
+	builder.WriteString("**Logging & Observability:**\n")
+	builder.WriteString("- `query_loki`: Query Loki for cluster logs (ModSecurity, application logs)\n")
+	builder.WriteString("- `cloudwatch_logs_query`: Execute CloudWatch Logs Insights queries across AWS log groups\n")
+	builder.WriteString("- `cloudwatch_logs_list_groups`: List available CloudWatch log groups in an AWS region\n")
+	builder.WriteString("- `cloudwatch_logs_get_events`: Get log events from a specific CloudWatch log stream\n")
+	builder.WriteString("- `prometheus_query`: Execute an instant PromQL query\n")
+	builder.WriteString("- `prometheus_query_range`: Execute a range PromQL query for trend analysis\n")
+	builder.WriteString("- `prometheus_series`: Find time series matching label selectors\n")
+	builder.WriteString("- `prometheus_label_values`: Get all values for a given label name\n")
+	builder.WriteString("- `prometheus_list_endpoints`: List configured Prometheus endpoints\n\n")
+	builder.WriteString("**Kubernetes:**\n")
+	builder.WriteString("- `get_k8s_pod_logs`: Fetch pod logs from Kubernetes\n")
+	builder.WriteString("- `get_k8s_resource`: Get K8s resource configs (ConfigMap, Deployment, etc.)\n")
+	builder.WriteString("- `list_k8s_pods`: List pods in a namespace\n")
+	builder.WriteString("- `get_k8s_events`: Get K8s events for troubleshooting\n\n")
+	builder.WriteString("**Security & Infrastructure:**\n")
+	builder.WriteString("- `whois_lookup`: Look up IP address geolocation and ISP\n")
+	builder.WriteString("- `ecr_scan_results`: Query AWS ECR for container image vulnerability scan results\n\n")
+	builder.WriteString("**Grafana:**\n")
+	builder.WriteString("- `grafana_list_dashboards`: List all Grafana dashboards\n")
+	builder.WriteString("- `grafana_get_dashboard`: Get a specific Grafana dashboard by UID\n")
+	builder.WriteString("- `grafana_create_dashboard`: Create a new Grafana dashboard\n")
+	builder.WriteString("- `grafana_update_dashboard`: Update an existing Grafana dashboard\n")
+	builder.WriteString("- `grafana_delete_dashboard`: Delete a Grafana dashboard\n\n")
+	builder.WriteString("**Data & Code:**\n")
+	builder.WriteString("- `database_query`: Execute read-only SQL queries (SELECT, SHOW, DESCRIBE, EXPLAIN)\n")
+	builder.WriteString("- `database_list`: List available databases\n")
+	builder.WriteString("- `github_get_file`: Fetch a file from a GitHub repository\n")
+	builder.WriteString("- `github_list_directory`: List files in a GitHub repository directory\n")
+	builder.WriteString("- `github_search_code`: Search for code across GitHub repositories\n\n")
+	builder.WriteString("**Reporting:**\n")
+	builder.WriteString("- `generate_pdf`: Generate a PDF report from Markdown content\n\n")
+	builder.WriteString("Use these tools to gather the information you need to complete your investigation. ")
+	builder.WriteString("You can call multiple tools in sequence to build a complete picture. ")
+	builder.WriteString("Use the tool that matches what the user is asking about - if they ask about CloudWatch, use CloudWatch tools; if they ask about cluster logs, use Loki.\n\n")
 }
