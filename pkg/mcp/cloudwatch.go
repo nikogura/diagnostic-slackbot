@@ -38,6 +38,10 @@ const (
 // If set, CloudWatch queries will assume this role instead of using the default credentials.
 const envCloudWatchAssumeRole = "CLOUDWATCH_ASSUME_ROLE"
 
+// Environment variable for optional external ID when assuming cross-account roles.
+// Required when the target role's trust policy includes an external ID condition.
+const envCloudWatchExternalID = "CLOUDWATCH_EXTERNAL_ID"
+
 // CloudWatchLogsClient defines the interface for CloudWatch Logs operations.
 // This allows for easy mocking in tests.
 type CloudWatchLogsClient interface {
@@ -420,12 +424,23 @@ func createCloudWatchClient(ctx context.Context, region string) (client *cloudwa
 }
 
 // configureAssumeRole creates a new AWS config that assumes the specified role.
+// If CLOUDWATCH_EXTERNAL_ID is set, it is passed to the STS AssumeRole call.
 func configureAssumeRole(ctx context.Context, baseCfg aws.Config, roleARN string, region string) (cfg aws.Config, err error) {
 	// Create STS client from base config
 	stsClient := sts.NewFromConfig(baseCfg)
 
+	// Build assume role options
+	var opts []func(*stscreds.AssumeRoleOptions)
+
+	externalID := os.Getenv(envCloudWatchExternalID)
+	if externalID != "" {
+		opts = append(opts, func(o *stscreds.AssumeRoleOptions) {
+			o.ExternalID = aws.String(externalID)
+		})
+	}
+
 	// Create credentials provider that assumes the role
-	creds := stscreds.NewAssumeRoleProvider(stsClient, roleARN)
+	creds := stscreds.NewAssumeRoleProvider(stsClient, roleARN, opts...)
 
 	// Load new config with the assume role credentials
 	cfg, err = config.LoadDefaultConfig(ctx,

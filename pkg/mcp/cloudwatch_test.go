@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/stretchr/testify/assert"
@@ -893,6 +894,48 @@ func TestParseQueryResults(t *testing.T) {
 		assert.Equal(t, "value", result.Results[0]["valid"])
 		_, hasNilKey := result.Results[0][""]
 		assert.False(t, hasNilKey)
+	})
+}
+
+// TestConfigureAssumeRoleExternalID tests that the external ID env var is read and applied.
+func TestConfigureAssumeRoleExternalID(t *testing.T) {
+	// Cannot use t.Parallel() because subtests modify env vars
+
+	t.Run("without_external_id", func(t *testing.T) {
+		// Ensure env var is not set
+		t.Setenv(envCloudWatchExternalID, "")
+
+		// configureAssumeRole should succeed without external ID.
+		// We can't fully test STS calls without AWS, but we verify the function
+		// returns a valid config (the credential provider is lazy, so no AWS call happens here).
+		ctx := context.Background()
+
+		baseCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+		// Skip if AWS config can't load (no credentials)
+		if err != nil {
+			t.Skipf("skipping - AWS config not available: %v", err)
+		}
+
+		cfg, err := configureAssumeRole(ctx, baseCfg, "arn:aws:iam::123456789012:role/test-role", "us-east-1")
+		require.NoError(t, err)
+		assert.Equal(t, "us-east-1", cfg.Region)
+	})
+
+	t.Run("with_external_id", func(t *testing.T) {
+		t.Setenv(envCloudWatchExternalID, "org-12345")
+
+		ctx := context.Background()
+
+		baseCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion("us-east-1"))
+		if err != nil {
+			t.Skipf("skipping - AWS config not available: %v", err)
+		}
+
+		cfg, err := configureAssumeRole(ctx, baseCfg, "arn:aws:iam::123456789012:role/test-role", "us-east-1")
+		require.NoError(t, err)
+		assert.Equal(t, "us-east-1", cfg.Region)
+		// The external ID is embedded in the credentials provider; we verify no error
+		// during configuration. Actual STS call validation requires integration tests.
 	})
 }
 

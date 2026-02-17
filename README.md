@@ -465,6 +465,7 @@ The bot is configured via environment variables:
 - `GITHUB_TOKEN` - Personal access token for GitHub tools (optional)
 - `AWS_*` - AWS credentials for ECR vulnerability scanning (optional)
 - `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for CloudWatch queries (optional). If not set, uses the workload's default credentials (IRSA, instance profile, etc.)
+- `CLOUDWATCH_EXTERNAL_ID` - External ID for cross-account role assumption (optional). Required when the target role's trust policy includes an external ID condition (e.g., AWS Organization ID). Only used when `CLOUDWATCH_ASSUME_ROLE` is set.
 
 ## Building
 
