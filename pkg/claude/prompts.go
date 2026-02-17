@@ -28,7 +28,7 @@ func BuildSystemPrompt(skill *investigations.InvestigationSkill, engineeringStan
 		builder.WriteString("# Reference Documentation\n\n")
 
 		for docName, docContent := range contextDocs {
-			builder.WriteString(fmt.Sprintf("## %s\n\n", docName))
+			fmt.Fprintf(&builder, "## %s\n\n", docName)
 			builder.WriteString(docContent)
 			builder.WriteString("\n\n")
 		}
@@ -71,7 +71,7 @@ func FormatInitialContext(resources map[string]string) (result string) {
 	builder.WriteString("The following resources have been fetched to assist with your investigation:\n\n")
 
 	for resourceName, resourceData := range resources {
-		builder.WriteString(fmt.Sprintf("## %s\n\n", resourceName))
+		fmt.Fprintf(&builder, "## %s\n\n", resourceName)
 		builder.WriteString("```\n")
 		builder.WriteString(resourceData)
 		builder.WriteString("\n```\n\n")

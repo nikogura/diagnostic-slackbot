@@ -242,14 +242,14 @@ func (q *QueryResult) FormatResultAsText() (result string) {
 
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("Found %d log entries:\n\n", len(q.Entries)))
+	fmt.Fprintf(&builder, "Found %d log entries:\n\n", len(q.Entries))
 
 	for i, entry := range q.Entries {
-		builder.WriteString(fmt.Sprintf("[%d] %s\n", i+1, entry.Timestamp.Format(time.RFC3339)))
-		builder.WriteString(fmt.Sprintf("%s\n\n", entry.Line))
+		fmt.Fprintf(&builder, "[%d] %s\n", i+1, entry.Timestamp.Format(time.RFC3339))
+		fmt.Fprintf(&builder, "%s\n\n", entry.Line)
 	}
 
-	builder.WriteString(fmt.Sprintf("Query completed in %s\n", q.Stats.Duration))
+	fmt.Fprintf(&builder, "Query completed in %s\n", q.Stats.Duration)
 
 	result = builder.String()
 	return result

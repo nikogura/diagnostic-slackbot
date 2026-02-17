@@ -161,7 +161,7 @@ func (a *Agent) FetchLogs(ctx context.Context, req LogRequest) (result string, e
 			containerName = pod.Spec.Containers[0].Name
 		}
 
-		logBuilder.WriteString(fmt.Sprintf("=== Pod: %s, Container: %s ===\n", pod.Name, containerName))
+		fmt.Fprintf(&logBuilder, "=== Pod: %s, Container: %s ===\n", pod.Name, containerName)
 
 		// Fetch logs
 		logReq := a.clientset.CoreV1().Pods(req.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
@@ -172,7 +172,7 @@ func (a *Agent) FetchLogs(ctx context.Context, req LogRequest) (result string, e
 
 		logStream, streamErr := logReq.Stream(ctx)
 		if streamErr != nil {
-			logBuilder.WriteString(fmt.Sprintf("Error fetching logs: %v\n\n", streamErr))
+			fmt.Fprintf(&logBuilder, "Error fetching logs: %v\n\n", streamErr)
 			continue
 		}
 
@@ -180,7 +180,7 @@ func (a *Agent) FetchLogs(ctx context.Context, req LogRequest) (result string, e
 		logStream.Close()
 
 		if readErr != nil {
-			logBuilder.WriteString(fmt.Sprintf("Error reading logs: %v\n\n", readErr))
+			fmt.Fprintf(&logBuilder, "Error reading logs: %v\n\n", readErr)
 			continue
 		}
 
@@ -292,20 +292,20 @@ func (a *Agent) ListPods(ctx context.Context, namespace string, labelSelector st
 
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("Found %d pods:\n\n", len(podList.Items)))
+	fmt.Fprintf(&builder, "Found %d pods:\n\n", len(podList.Items))
 
 	for _, pod := range podList.Items {
-		builder.WriteString(fmt.Sprintf("• %s\n", pod.Name))
-		builder.WriteString(fmt.Sprintf("  Status: %s\n", pod.Status.Phase))
-		builder.WriteString(fmt.Sprintf("  Node: %s\n", pod.Spec.NodeName))
-		builder.WriteString(fmt.Sprintf("  Created: %s\n", pod.CreationTimestamp.Format(time.RFC3339)))
+		fmt.Fprintf(&builder, "• %s\n", pod.Name)
+		fmt.Fprintf(&builder, "  Status: %s\n", pod.Status.Phase)
+		fmt.Fprintf(&builder, "  Node: %s\n", pod.Spec.NodeName)
+		fmt.Fprintf(&builder, "  Created: %s\n", pod.CreationTimestamp.Format(time.RFC3339))
 
 		if len(pod.Status.ContainerStatuses) > 0 {
 			builder.WriteString("  Containers:\n")
 
 			for _, cs := range pod.Status.ContainerStatuses {
-				builder.WriteString(fmt.Sprintf("    - %s (Ready: %t, RestartCount: %d)\n",
-					cs.Name, cs.Ready, cs.RestartCount))
+				fmt.Fprintf(&builder, "    - %s (Ready: %t, RestartCount: %d)\n",
+					cs.Name, cs.Ready, cs.RestartCount)
 			}
 		}
 
@@ -353,16 +353,16 @@ func (a *Agent) GetEvents(ctx context.Context, namespace string, fieldSelector s
 
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("Found %d events:\n\n", len(eventList.Items)))
+	fmt.Fprintf(&builder, "Found %d events:\n\n", len(eventList.Items))
 
 	for _, event := range eventList.Items {
-		builder.WriteString(fmt.Sprintf("[%s] %s/%s\n",
+		fmt.Fprintf(&builder, "[%s] %s/%s\n",
 			event.LastTimestamp.Format(time.RFC3339),
 			event.InvolvedObject.Kind,
-			event.InvolvedObject.Name))
-		builder.WriteString(fmt.Sprintf("  Type: %s\n", event.Type))
-		builder.WriteString(fmt.Sprintf("  Reason: %s\n", event.Reason))
-		builder.WriteString(fmt.Sprintf("  Message: %s\n", event.Message))
+			event.InvolvedObject.Name)
+		fmt.Fprintf(&builder, "  Type: %s\n", event.Type)
+		fmt.Fprintf(&builder, "  Reason: %s\n", event.Reason)
+		fmt.Fprintf(&builder, "  Message: %s\n", event.Message)
 		builder.WriteString("\n")
 	}
 
@@ -427,13 +427,13 @@ func (a *Agent) WhoisLookup(ctx context.Context, ipAddress string) (result strin
 	// Format the results nicely
 	var builder strings.Builder
 
-	builder.WriteString(fmt.Sprintf("Whois lookup for %s:\n\n", ipAddress))
-	builder.WriteString(fmt.Sprintf("Country: %s (%s)\n", data["country"], data["countryCode"]))
-	builder.WriteString(fmt.Sprintf("Region: %s (%s)\n", data["regionName"], data["region"]))
-	builder.WriteString(fmt.Sprintf("City: %s\n", data["city"]))
-	builder.WriteString(fmt.Sprintf("ISP: %s\n", data["isp"]))
-	builder.WriteString(fmt.Sprintf("Organization: %s\n", data["org"]))
-	builder.WriteString(fmt.Sprintf("ASN: %s\n", data["as"]))
+	fmt.Fprintf(&builder, "Whois lookup for %s:\n\n", ipAddress)
+	fmt.Fprintf(&builder, "Country: %s (%s)\n", data["country"], data["countryCode"])
+	fmt.Fprintf(&builder, "Region: %s (%s)\n", data["regionName"], data["region"])
+	fmt.Fprintf(&builder, "City: %s\n", data["city"])
+	fmt.Fprintf(&builder, "ISP: %s\n", data["isp"])
+	fmt.Fprintf(&builder, "Organization: %s\n", data["org"])
+	fmt.Fprintf(&builder, "ASN: %s\n", data["as"])
 
 	result = builder.String()
 	return result, err

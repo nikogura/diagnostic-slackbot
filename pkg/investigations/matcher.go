@@ -90,8 +90,8 @@ func (m *Matcher) FormatAvailableInvestigations() (result string) {
 			continue
 		}
 
-		builder.WriteString(fmt.Sprintf("• *%s*: %s\n", skill.Name, skill.Description))
-		builder.WriteString(fmt.Sprintf("  Triggers: %s\n", strings.Join(skill.TriggerPatterns, ", ")))
+		fmt.Fprintf(&builder, "• *%s*: %s\n", skill.Name, skill.Description)
+		fmt.Fprintf(&builder, "  Triggers: %s\n", strings.Join(skill.TriggerPatterns, ", "))
 	}
 
 	result = builder.String()

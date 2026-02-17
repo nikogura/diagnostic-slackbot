@@ -541,38 +541,38 @@ func (s *Server) formatECRResults(
 
 	builder.WriteString("# ECR Vulnerability Scan Results\n\n")
 	builder.WriteString("**Query Parameters:**\n")
-	builder.WriteString(fmt.Sprintf("- Accounts: %s\n", strings.Join(accounts, ", ")))
-	builder.WriteString(fmt.Sprintf("- Regions: %s\n", strings.Join(regions, ", ")))
-	builder.WriteString(fmt.Sprintf("- Image Age Filter: Last %d days\n", maxAgeDays))
+	fmt.Fprintf(&builder, "- Accounts: %s\n", strings.Join(accounts, ", "))
+	fmt.Fprintf(&builder, "- Regions: %s\n", strings.Join(regions, ", "))
+	fmt.Fprintf(&builder, "- Image Age Filter: Last %d days\n", maxAgeDays)
 	if minSeverity != "" {
-		builder.WriteString(fmt.Sprintf("- Minimum Severity: %s\n", minSeverity))
+		fmt.Fprintf(&builder, "- Minimum Severity: %s\n", minSeverity)
 	}
 	builder.WriteString("\n**Summary:**\n")
-	builder.WriteString(fmt.Sprintf("- Total Images Scanned: %d\n", totalImages))
-	builder.WriteString(fmt.Sprintf("- Total Vulnerabilities: %d\n", totalCritical+totalHigh+totalMedium+totalLow))
-	builder.WriteString(fmt.Sprintf("  - CRITICAL: %d\n", totalCritical))
-	builder.WriteString(fmt.Sprintf("  - HIGH: %d\n", totalHigh))
-	builder.WriteString(fmt.Sprintf("  - MEDIUM: %d\n", totalMedium))
-	builder.WriteString(fmt.Sprintf("  - LOW: %d\n", totalLow))
+	fmt.Fprintf(&builder, "- Total Images Scanned: %d\n", totalImages)
+	fmt.Fprintf(&builder, "- Total Vulnerabilities: %d\n", totalCritical+totalHigh+totalMedium+totalLow)
+	fmt.Fprintf(&builder, "  - CRITICAL: %d\n", totalCritical)
+	fmt.Fprintf(&builder, "  - HIGH: %d\n", totalHigh)
+	fmt.Fprintf(&builder, "  - MEDIUM: %d\n", totalMedium)
+	fmt.Fprintf(&builder, "  - LOW: %d\n", totalLow)
 	builder.WriteString("\n")
 
 	// Detailed results per image
 	builder.WriteString("## Image Details\n\n")
 
 	for _, result := range results {
-		builder.WriteString(fmt.Sprintf("### %s:%s\n", result.RepositoryName, result.ImageTag))
-		builder.WriteString(fmt.Sprintf("- **Account:** %s\n", result.AccountID))
-		builder.WriteString(fmt.Sprintf("- **Region:** %s\n", result.Region))
-		builder.WriteString(fmt.Sprintf("- **Pushed:** %s (%d days ago)\n",
+		fmt.Fprintf(&builder, "### %s:%s\n", result.RepositoryName, result.ImageTag)
+		fmt.Fprintf(&builder, "- **Account:** %s\n", result.AccountID)
+		fmt.Fprintf(&builder, "- **Region:** %s\n", result.Region)
+		fmt.Fprintf(&builder, "- **Pushed:** %s (%d days ago)\n",
 			result.PushedAt.Format("2006-01-02 15:04:05"),
-			int(time.Since(result.PushedAt).Hours()/24)))
-		builder.WriteString(fmt.Sprintf("- **Scan Status:** %s\n", result.ScanStatus))
-		builder.WriteString(fmt.Sprintf("- **Digest:** %s\n", result.ImageDigest))
+			int(time.Since(result.PushedAt).Hours()/24))
+		fmt.Fprintf(&builder, "- **Scan Status:** %s\n", result.ScanStatus)
+		fmt.Fprintf(&builder, "- **Digest:** %s\n", result.ImageDigest)
 		builder.WriteString("- **Vulnerabilities:**\n")
-		builder.WriteString(fmt.Sprintf("  - CRITICAL: %d\n", result.Vulnerabilities.Critical))
-		builder.WriteString(fmt.Sprintf("  - HIGH: %d\n", result.Vulnerabilities.High))
-		builder.WriteString(fmt.Sprintf("  - MEDIUM: %d\n", result.Vulnerabilities.Medium))
-		builder.WriteString(fmt.Sprintf("  - LOW: %d\n", result.Vulnerabilities.Low))
+		fmt.Fprintf(&builder, "  - CRITICAL: %d\n", result.Vulnerabilities.Critical)
+		fmt.Fprintf(&builder, "  - HIGH: %d\n", result.Vulnerabilities.High)
+		fmt.Fprintf(&builder, "  - MEDIUM: %d\n", result.Vulnerabilities.Medium)
+		fmt.Fprintf(&builder, "  - LOW: %d\n", result.Vulnerabilities.Low)
 
 		// Include detailed findings if available
 		formatDetailedFindings(&builder, result.Findings)
