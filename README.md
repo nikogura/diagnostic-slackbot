@@ -34,6 +34,7 @@ diagnostic-slackbot/
 │   │   ├── bot.go                   # Core bot initialization
 │   │   ├── handlers.go              # Event handlers
 │   │   ├── claudecode.go            # Claude Code CLI integration
+│   │   ├── tools.go                 # Dynamic tool availability config
 │   │   └── state.go                 # Conversation state management
 │   ├── claude/                      # Direct Claude API integration (legacy)
 │   │   ├── client.go                # API client with tool use support
@@ -47,9 +48,15 @@ diagnostic-slackbot/
 │   │   ├── loki.go                  # Loki log query client
 │   │   └── sanitizer.go             # Log sanitization
 │   ├── mcp/                         # MCP server implementation
-│   │   ├── server.go                # MCP protocol and tool handlers
+│   │   ├── server.go                # MCP protocol, tool registration, and handlers
 │   │   ├── types.go                 # MCP protocol types
-│   │   └── ecr.go                   # ECR vulnerability scanning
+│   │   ├── http_server.go           # HTTP/SSE transport server
+│   │   ├── cloudwatch.go            # CloudWatch Logs tools
+│   │   ├── prometheus.go            # Prometheus/PromQL tools
+│   │   ├── grafana.go               # Grafana dashboard tools
+│   │   ├── database.go              # Database query tools
+│   │   ├── ecr.go                   # ECR vulnerability scanning
+│   │   └── auth/                    # MCP server authentication
 │   └── metrics/                     # Prometheus metrics
 │       ├── metrics.go               # Metric definitions
 │       └── server.go                # HTTP metrics server
@@ -202,46 +209,65 @@ The bot uses a specificity algorithm to select the best matching investigation:
 
 ### Available Claude Tools (via MCP Server)
 
-Your investigation prompt should reference these tools that Claude can autonomously use:
+Your investigation prompt should reference these MCP tool names that Claude can autonomously use. Tool availability is dynamic — only tools with configured backing services are registered and shown in the prompt.
 
-- **query_loki**: Query Loki using LogQL syntax
-  ```
-  Parameters: query (LogQL string), start_time (relative like "1h" or RFC3339), end_time, limit
-  ```
+> **CRITICAL: Investigation skills MUST reference MCP tool names (e.g., `cloudwatch_logs_query`), NOT external CLI commands (e.g., `aws logs start-query`).** Claude Code runs in `--print` mode with MCP tools via stdio — it does NOT have shell access to external CLIs. If a skill references CLI commands instead of MCP tool names, Claude will either fail or hallucinate results.
 
-- **whois_lookup**: IP geolocation
+**Logging (Loki)** — requires `LOKI_ENDPOINT`:
+- `query_loki` — Query Loki for cluster logs using LogQL syntax
   ```
-  Parameters: ip_address
+  Parameters: query, start, end (optional), limit (optional)
   ```
 
-- **generate_pdf**: Convert Markdown to PDF report
+**CloudWatch Logs** — requires `CLOUDWATCH_ASSUME_ROLE`:
+- `cloudwatch_logs_query` — Execute CloudWatch Logs Insights queries across log groups
   ```
-  Parameters: markdown_content (string), filename (optional)
+  Parameters: query, log_groups, start_time, end_time (optional), region (optional), limit (optional)
   ```
-
-- **github_get_file**: Fetch file from GitHub repository
+- `cloudwatch_logs_list_groups` — List available CloudWatch log groups
   ```
-  Parameters: owner, repo, path, ref (optional branch/tag)
+  Parameters: prefix (optional), region (optional), limit (optional)
   ```
-
-- **github_list_directory**: List directory contents
+- `cloudwatch_logs_get_events` — Get log events from a specific log stream
   ```
-  Parameters: owner, repo, path
-  ```
-
-- **github_search_code**: Search code across repositories
-  ```
-  Parameters: query, owner (optional)
+  Parameters: log_group, log_stream, start_time (optional), end_time (optional), limit (optional)
   ```
 
-- **ecr_scan_results**: Query ECR vulnerability scans
-  ```
-  Parameters: repository_name, account_ids (list), severity_filter (optional)
-  ```
+**Prometheus/Metrics** — requires `PROMETHEUS_URL` or `PROMETHEUS_<NAME>_URL`:
+- `prometheus_query` — Execute an instant PromQL query
+- `prometheus_query_range` — Execute a range PromQL query for trend analysis
+- `prometheus_series` — Find time series matching label selectors
+- `prometheus_label_values` — Get all values for a given label name
+- `prometheus_list_endpoints` — List configured Prometheus endpoints
 
-**Note:** The legacy direct K8s tool calls (`get_k8s_pod_logs`, `get_k8s_resource`, etc.) are deprecated in favor of the MCP server architecture. Investigation templates should primarily use `query_loki` for log access and focus on log analysis rather than direct K8s API calls.
+**Grafana** — requires `GRAFANA_URL` + `GRAFANA_API_KEY`:
+- `grafana_list_dashboards` — List all Grafana dashboards
+- `grafana_get_dashboard` — Get a specific dashboard by UID
+- `grafana_create_dashboard` — Create a new dashboard from queries
+- `grafana_update_dashboard` — Update an existing dashboard
+- `grafana_delete_dashboard` — Delete a dashboard
+
+**Database** — requires `DATABASE_URL` or `DATABASE_<NAME>_URL`:
+- `database_query` — Execute read-only SQL queries (SELECT, SHOW, DESCRIBE, EXPLAIN)
+- `database_list` — List available databases
+
+**GitHub** — requires `GITHUB_TOKEN`:
+- `github_get_file` — Fetch a file from a GitHub repository
+- `github_list_directory` — List files in a repository directory
+- `github_search_code` — Search code across repositories
+
+**ECR (Container Security)** — requires `AWS_REGION` or `AWS_DEFAULT_REGION`:
+- `ecr_scan_results` — Query ECR for container image vulnerability scan results
+
+**Utilities** — always available:
+- `whois_lookup` — IP geolocation, ISP, ASN lookup
+- `generate_pdf` — Generate a PDF report from Markdown content (auto-uploaded to Slack)
+
+**Note:** The legacy direct K8s tool calls (`get_k8s_pod_logs`, `get_k8s_resource`, etc.) are deprecated in favor of the MCP server architecture. Investigation templates should use the MCP tools above.
 
 ### Investigation Prompt Guidelines
+
+> **WARNING: Always use MCP tool names in your prompts.** Claude Code runs in `--print` mode without shell access. It can ONLY interact with external services through MCP tools. If your prompt says "run `aws logs start-query`" or "use `kubectl get pods`", Claude will either fail silently or hallucinate output. Instead, say "use `cloudwatch_logs_query`" or "use `query_loki`". See the tool list above.
 
 Your `initial_prompt` should:
 
@@ -251,7 +277,7 @@ Your `initial_prompt` should:
 
 3. **Provide methodology**: Step-by-step investigation phases or decision trees
 
-4. **List available tools**: Explain when to use each tool with examples
+4. **Reference MCP tools by name**: Tell Claude which MCP tools to use and when. Use the exact tool names from the "Available Claude Tools" section above (e.g., `cloudwatch_logs_query`, `query_loki`, `prometheus_query`). Never reference external CLIs like `aws`, `kubectl`, `psql`, etc.
 
 5. **Define output format**: Specify structure (Summary, Timeline, Root Cause, Remediation, Prevention)
 
@@ -415,36 +441,32 @@ After creating this, substitute `{{INGRESS_NAMESPACE}}` with your actual namespa
 
 ## Claude Tool Use via MCP Server
 
-The bot uses Claude Code CLI with a custom MCP (Model Context Protocol) server that provides these tools for autonomous investigation:
+The bot uses Claude Code CLI with a custom MCP (Model Context Protocol) server that provides tools for autonomous investigation. Tool availability is dynamic — only tools backed by configured services are registered.
 
-### Available Tools
+### Tool Categories
 
-- **query_loki**: Query Loki log aggregation using LogQL syntax
-  - Supports relative time (`1h`, `24h`) or RFC3339 timestamps
-  - Automatic sanitization of results
-  - Max 500 results to avoid token overflow
+| Category | Env Var Required | Tools |
+|----------|-----------------|-------|
+| Loki (Logging) | `LOKI_ENDPOINT` | `query_loki` |
+| CloudWatch Logs | `CLOUDWATCH_ASSUME_ROLE` | `cloudwatch_logs_query`, `cloudwatch_logs_list_groups`, `cloudwatch_logs_get_events` |
+| Prometheus | `PROMETHEUS_URL` or `PROMETHEUS_<NAME>_URL` | `prometheus_query`, `prometheus_query_range`, `prometheus_series`, `prometheus_label_values`, `prometheus_list_endpoints` |
+| Grafana | `GRAFANA_URL` + `GRAFANA_API_KEY` | `grafana_list_dashboards`, `grafana_get_dashboard`, `grafana_create_dashboard`, `grafana_update_dashboard`, `grafana_delete_dashboard` |
+| Database | `DATABASE_URL` or `DATABASE_<NAME>_URL` | `database_query`, `database_list` |
+| GitHub | `GITHUB_TOKEN` | `github_get_file`, `github_list_directory`, `github_search_code` |
+| ECR | `AWS_REGION` or `AWS_DEFAULT_REGION` | `ecr_scan_results` |
+| Utilities | *(always available)* | `whois_lookup`, `generate_pdf` |
 
-- **whois_lookup**: IP geolocation via ip-api.com
-  - Returns country, ISP, ASN, organization
-  - Useful for WAF block analysis
-
-- **generate_pdf**: Convert Markdown to branded PDF reports
-  - Uses Pandoc + custom LaTeX template
-  - Automatic TOC, syntax highlighting, company branding
-  - Files saved to `/tmp/` for automatic Slack upload
-
-- **GitHub Tools** (requires `GITHUB_TOKEN`):
-  - `github_get_file`: Fetch file contents from repositories
-  - `github_list_directory`: List directory contents
-  - `github_search_code`: Code search across repositories
-
-- **ECR Tools** (requires AWS credentials):
-  - `ecr_scan_results`: Query vulnerability scans across AWS accounts
-  - Note: Currently has mock implementation (see docs/ECR_INTEGRATION.md)
+See `pkg/bot/tools.go` for the env var detection logic and `pkg/mcp/server.go` for conditional tool registration.
 
 ### Architecture
 
-The MCP server runs as a persistent HTTP/SSE server (started by the bot on port 8090) and is registered with Claude Code at container startup via `entrypoint.sh`. It communicates with Claude Code using JSON-RPC over HTTP/SSE transport for better performance and connection pooling.
+The MCP server has two transport modes:
+
+1. **Stdio** (for Claude Code subprocess): Claude Code runs in `--print` mode, which does not load MCP servers registered via `claude mcp add`. Instead, the bot passes `--mcp-config` with the `/app/mcp-server` binary using stdio transport. This spawns a dedicated MCP server process per investigation.
+
+2. **HTTP/SSE** (for external clients): When `MCP_HTTP_ENABLED=true`, the bot starts a persistent HTTP/SSE server on the configured port (default 8090). This serves external MCP clients like IDE integrations or other services.
+
+Both transports use the same `Server` struct and tool implementations. The stdio binary and the HTTP server register identical tools based on the same environment configuration.
 
 ## Configuration
 
@@ -459,7 +481,6 @@ The bot is configured via environment variables:
 - `KUBECONFIG` - Path to kubeconfig (default: uses in-cluster config)
 - `INVESTIGATION_DIR` - Path to investigation skills (default: `./investigations`)
 - `CLAUDE_MD_PATH` - Path to engineering standards (default: `./docs/CLAUDE.md`)
-- `LOKI_ENDPOINT` - Loki gateway endpoint (default: `http://loki-gateway.logging.svc.cluster.local`)
 - `COMPANY_NAME` - Company name for PDF report branding (default: `Company`)
 - `FILE_RETENTION` - File cleanup interval (default: `24h`)
 - `MCP_HTTP_ENABLED` - Enable HTTP/SSE MCP server (default: `false`, set to `true` for production)
@@ -477,11 +498,17 @@ The bot is configured via environment variables:
 - `MCP_MTLS_CA_CERT_PATH` - Path to CA certificate for mutual TLS authentication
 - `MCP_MTLS_VERIFY_CLIENT` - Verify client certificates against CA (default: `true`)
 
-**Other Services:**
-- `GITHUB_TOKEN` - Personal access token for GitHub tools (optional)
-- `AWS_*` - AWS credentials for ECR vulnerability scanning (optional)
-- `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for CloudWatch queries (optional). If not set, uses the workload's default credentials (IRSA, instance profile, etc.)
-- `CLOUDWATCH_EXTERNAL_ID` - External ID for cross-account role assumption (optional). Required when the target role's trust policy includes an external ID condition (e.g., AWS Organization ID). Only used when `CLOUDWATCH_ASSUME_ROLE` is set.
+**Tool Backing Services** (each enables a set of MCP tools — see [Tool Categories](#tool-categories)):
+- `LOKI_ENDPOINT` - Loki gateway endpoint (enables `query_loki`)
+- `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for CloudWatch queries (enables CloudWatch tools)
+- `CLOUDWATCH_EXTERNAL_ID` - External ID for cross-account role assumption (optional, only used with `CLOUDWATCH_ASSUME_ROLE`)
+- `PROMETHEUS_URL` - Prometheus endpoint (enables Prometheus tools). Multiple endpoints: use `PROMETHEUS_<NAME>_URL` pattern
+- `GRAFANA_URL` - Grafana instance URL (requires `GRAFANA_API_KEY`)
+- `GRAFANA_API_KEY` - Grafana API key (required with `GRAFANA_URL`, enables Grafana tools)
+- `DATABASE_URL` - Database connection string (enables Database tools). Multiple databases: use `DATABASE_<NAME>_URL` pattern
+- `GITHUB_TOKEN` - Personal access token for GitHub tools
+- `AWS_REGION` or `AWS_DEFAULT_REGION` - AWS region (enables ECR tools)
+- `AWS_*` - Standard AWS credentials for ECR vulnerability scanning
 
 ## Building
 
