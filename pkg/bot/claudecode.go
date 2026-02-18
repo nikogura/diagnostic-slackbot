@@ -49,6 +49,7 @@ func (r *ClaudeCodeRunner) RunInvestigation(ctx context.Context, skill *investig
 		"--print",
 		"--dangerously-skip-permissions",
 		"--model", r.model,
+		"--mcp-config", `{"mcpServers":{"diagnostic":{"command":"/app/mcp-server"}}}`,
 		"--",
 		prompt,
 	)
