@@ -16,6 +16,11 @@ import (
 
 // handleAppMention handles app mention events (when bot is @mentioned).
 func (b *Bot) handleAppMention(ctx context.Context, event *slackevents.AppMentionEvent) {
+	// Ignore our own messages to prevent self-triggering loops
+	if event.User == b.botUserID {
+		return
+	}
+
 	b.logger.InfoContext(ctx, "handling app mention",
 		slog.String("user", event.User),
 		slog.String("channel", event.Channel),
@@ -79,6 +84,19 @@ func (b *Bot) sendHelpMessage(channel string, threadTS string) {
 
 // startInvestigation starts a new investigation based on user message.
 func (b *Bot) startInvestigation(ctx context.Context, channel string, threadTS string, userID string, message string) {
+	// Prevent duplicate investigations for the same user in the same channel.
+	// This stops loops caused by queued Slack events being processed after an investigation completes.
+	key := InvestigationKey(channel, userID)
+	if !b.tracker.TryStart(key) {
+		b.logger.InfoContext(ctx, "investigation already active, skipping duplicate",
+			slog.String("user", userID),
+			slog.String("channel", channel))
+
+		return
+	}
+
+	defer b.tracker.Done(key)
+
 	// Add reaction to show we're working
 	err := b.slackClient.AddReaction("eyes", slack.ItemRef{
 		Channel:   channel,
@@ -166,6 +184,19 @@ func (b *Bot) startInvestigation(ctx context.Context, channel string, threadTS s
 
 // handleThreadReply handles a reply in an existing investigation thread.
 func (b *Bot) handleThreadReply(ctx context.Context, channel string, threadTS string, userID string, message string) {
+	// Prevent duplicate thread replies for the same user in the same channel.
+	key := InvestigationKey(channel, userID)
+	if !b.tracker.TryStart(key) {
+		b.logger.InfoContext(ctx, "investigation already active for thread reply, skipping",
+			slog.String("user", userID),
+			slog.String("channel", channel),
+			slog.String("thread_ts", threadTS))
+
+		return
+	}
+
+	defer b.tracker.Done(key)
+
 	conv, exists := b.conversations.Get(threadTS)
 	if !exists {
 		b.sendErrorMessage(channel, threadTS, "I couldn't find an active conversation for this thread.")

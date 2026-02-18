@@ -34,6 +34,7 @@ type Bot struct {
 	skillLibrary     *investigations.SkillLibrary
 	matcher          *investigations.Matcher
 	conversations    *ConversationStore
+	tracker          *InvestigationTracker
 	logger           *slog.Logger
 	botUserID        string
 	fileRetention    time.Duration
@@ -101,6 +102,7 @@ func NewBot(cfg Config, logger *slog.Logger) (result *Bot, err error) {
 		skillLibrary:     skillLibrary,
 		matcher:          matcher,
 		conversations:    NewConversationStore(ConversationExpiry),
+		tracker:          NewInvestigationTracker(),
 		logger:           logger,
 		botUserID:        authResp.UserID,
 		fileRetention:    fileRetention,
@@ -147,7 +149,7 @@ func (b *Bot) handleSocketMode(ctx context.Context) {
 				}
 
 				b.socketClient.Ack(*evt.Request)
-				b.handleEventsAPI(ctx, eventsAPI)
+				go b.handleEventsAPI(ctx, eventsAPI)
 
 			case socketmode.EventTypeInteractive:
 				// Handle interactive events (buttons, etc.) if needed
