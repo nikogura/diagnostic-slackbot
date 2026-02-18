@@ -233,7 +233,7 @@ func TestAPIKeyAuth(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.apiKey != "" {
-				req.Header.Set("X-API-Key", tt.apiKey) //nolint:canonicalheader // X-API-Key is the industry standard header name
+				req.Header.Set("X-Api-Key", tt.apiKey)
 			}
 
 			result, err := auth.Authenticate(req)
@@ -321,7 +321,7 @@ func TestChain(t *testing.T) {
 				req.Header.Set("Authorization", tt.authHeader)
 			}
 			if tt.apiKeyHeader != "" {
-				req.Header.Set("X-API-Key", tt.apiKeyHeader) //nolint:canonicalheader // X-API-Key is the industry standard header name
+				req.Header.Set("X-Api-Key", tt.apiKeyHeader)
 			}
 
 			result, err := chain.Authenticate(req)

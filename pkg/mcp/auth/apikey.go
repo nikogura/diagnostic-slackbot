@@ -26,7 +26,7 @@ func (a *APIKeyAuth) Name() (name string) {
 
 // Authenticate validates the API key.
 func (a *APIKeyAuth) Authenticate(r *http.Request) (result *Result, err error) {
-	apiKey := r.Header.Get("X-API-Key") //nolint:canonicalheader // X-API-Key is the industry standard header name
+	apiKey := r.Header.Get("X-Api-Key")
 	if apiKey == "" {
 		err = errors.New("missing X-API-Key header")
 		return result, err
