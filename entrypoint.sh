@@ -15,11 +15,7 @@ cd /app
 echo "Registering MCP HTTP/SSE server with Claude Code..."
 claude mcp add --transport sse diagnostic http://localhost:8090/sse
 
-# Verify registration
-echo "Verifying MCP server registration..."
-claude mcp list
-
-echo "MCP HTTP/SSE server setup complete"
+echo "MCP HTTP/SSE server registered (server starts with main binary)"
 
 # Execute the main binary (which starts both Slack bot and HTTP MCP server)
 exec /app/diagnostic-slackbot "$@"
