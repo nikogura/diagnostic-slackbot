@@ -38,7 +38,8 @@ RUN apk add --no-cache \
     make \
     nodejs \
     npm \
-    wget
+    wget \
+    aws-cli
 
 # Install Claude Code globally (installs as 'claude' in /usr/local/bin/)
 RUN npm install -g @anthropic-ai/claude-code
