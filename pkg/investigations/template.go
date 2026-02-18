@@ -20,6 +20,9 @@ const (
 	InvestigationTypeAtlas             InvestigationType = "atlas-migration"
 	InvestigationTypePodCrash          InvestigationType = "pod-crashloop"
 	InvestigationTypeGeneralDiagnostic InvestigationType = "general-diagnostic"
+	InvestigationTypeCloudWatch        InvestigationType = "cloudwatch"
+	InvestigationTypeDashboard         InvestigationType = "dashboard"
+	InvestigationTypeDatabase          InvestigationType = "database"
 	InvestigationTypeUnknown           InvestigationType = "unknown"
 )
 
@@ -289,6 +292,12 @@ func inferTypeFromFilename(filename string) (result InvestigationType) {
 		result = InvestigationTypeAtlas
 	case strings.Contains(filename, "crashloop") || strings.Contains(filename, "pod"):
 		result = InvestigationTypePodCrash
+	case strings.Contains(filename, "cloudwatch"):
+		result = InvestigationTypeCloudWatch
+	case strings.Contains(filename, "dashboard"):
+		result = InvestigationTypeDashboard
+	case strings.Contains(filename, "database"):
+		result = InvestigationTypeDatabase
 	case strings.Contains(filename, "general"):
 		result = InvestigationTypeGeneralDiagnostic
 	default:

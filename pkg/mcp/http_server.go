@@ -319,7 +319,7 @@ func (h *HTTPServer) handleInitialize(req MCPRequest) (response MCPResponse) {
 
 // handleListTools handles the tools/list request.
 func (h *HTTPServer) handleListTools(req MCPRequest) (response MCPResponse) {
-	tools := getToolDefinitions()
+	tools := h.server.getToolDefinitions()
 
 	response = MCPResponse{
 		JSONRPC: "2.0",

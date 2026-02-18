@@ -86,53 +86,160 @@ func TestGetUtilityTools(t *testing.T) {
 	}
 }
 
-func TestGetToolDefinitions(t *testing.T) {
-	t.Parallel()
+func TestGetToolDefinitionsMinimalServer(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
 
-	tools := getToolDefinitions()
+	// Clear env vars that affect tool registration
+	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
 
-	// Should have all tools (1 Loki + 2 utility + 3 GitHub + 1 ECR + 2 Database + 5 Grafana + 3 CloudWatch + 5 Prometheus = 22 total)
-	expectedCount := 22
-	if len(tools) != expectedCount {
-		t.Errorf("getToolDefinitions() returned %d tools, want %d", len(tools), expectedCount)
+	// Server with only Loki client, no other services
+	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
+	server := NewServer(lokiClient, "", logger)
+
+	tools := server.getToolDefinitions()
+
+	// Should have Loki (1) + Utility (2) = 3 tools minimum
+	toolMap := make(map[string]bool)
+	for _, tool := range tools {
+		toolMap[tool.Name] = true
 	}
 
-	// Verify all expected tools are present
-	expectedTools := []string{
-		"query_loki",
-		"whois_lookup",
-		"generate_pdf",
-		"github_get_file",
-		"github_list_directory",
-		"github_search_code",
-		"ecr_scan_results",
-		"database_query",
-		"database_list",
-		"grafana_list_dashboards",
-		"grafana_get_dashboard",
-		"grafana_create_dashboard",
-		"grafana_update_dashboard",
-		"grafana_delete_dashboard",
-		"cloudwatch_logs_query",
-		"cloudwatch_logs_list_groups",
-		"cloudwatch_logs_get_events",
-		"prometheus_query",
-		"prometheus_query_range",
-		"prometheus_series",
-		"prometheus_label_values",
-		"prometheus_list_endpoints",
-	}
+	// Loki tools should be present (lokiClient is non-nil)
+	require.True(t, toolMap["query_loki"], "Loki tool should be present when lokiClient is set")
+
+	// Utility tools should always be present
+	require.True(t, toolMap["whois_lookup"], "whois_lookup should always be present")
+	require.True(t, toolMap["generate_pdf"], "generate_pdf should always be present")
+
+	// GitHub tools should NOT be present (no token)
+	require.False(t, toolMap["github_get_file"], "GitHub tools should not be present without token")
+
+	// Database tools should NOT be present (no DATABASE_URL)
+	require.False(t, toolMap["database_query"], "Database tools should not be present without config")
+}
+
+func TestGetToolDefinitionsWithGitHub(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	// Clear env vars
+	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+
+	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
+	server := NewServer(lokiClient, "test-token", logger)
+
+	tools := server.getToolDefinitions()
 
 	toolMap := make(map[string]bool)
 	for _, tool := range tools {
 		toolMap[tool.Name] = true
 	}
 
-	for _, expectedTool := range expectedTools {
-		if !toolMap[expectedTool] {
-			t.Errorf("Expected tool %s not found in getToolDefinitions()", expectedTool)
-		}
+	// GitHub tools should be present
+	require.True(t, toolMap["github_get_file"], "GitHub tools should be present with token")
+	require.True(t, toolMap["github_list_directory"], "GitHub list directory should be present")
+	require.True(t, toolMap["github_search_code"], "GitHub search should be present")
+}
+
+func TestGetToolDefinitionsWithCloudWatch(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "arn:aws:iam::123456789012:role/test")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+
+	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
+	server := NewServer(lokiClient, "", logger)
+
+	tools := server.getToolDefinitions()
+
+	toolMap := make(map[string]bool)
+	for _, tool := range tools {
+		toolMap[tool.Name] = true
 	}
+
+	require.True(t, toolMap["cloudwatch_logs_query"], "CloudWatch query should be present with CLOUDWATCH_ASSUME_ROLE")
+	require.True(t, toolMap["cloudwatch_logs_list_groups"], "CloudWatch list groups should be present")
+	require.True(t, toolMap["cloudwatch_logs_get_events"], "CloudWatch get events should be present")
+}
+
+func TestGetToolDefinitionsWithoutCloudWatch(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+
+	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
+	server := NewServer(lokiClient, "", logger)
+
+	tools := server.getToolDefinitions()
+
+	toolMap := make(map[string]bool)
+	for _, tool := range tools {
+		toolMap[tool.Name] = true
+	}
+
+	require.False(t, toolMap["cloudwatch_logs_query"], "CloudWatch should not be present without CLOUDWATCH_ASSUME_ROLE")
+}
+
+func TestGetToolDefinitionsWithECR(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+
+	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
+	server := NewServer(lokiClient, "", logger)
+
+	tools := server.getToolDefinitions()
+
+	toolMap := make(map[string]bool)
+	for _, tool := range tools {
+		toolMap[tool.Name] = true
+	}
+
+	require.True(t, toolMap["ecr_scan_results"], "ECR tool should be present with AWS_REGION")
+}
+
+func TestGetToolDefinitionsUtilityToolsAlwaysPresent(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	// Clear everything
+	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+
+	// Server with nil lokiClient
+	server := &Server{
+		logger: logger,
+	}
+
+	tools := server.getToolDefinitions()
+
+	toolMap := make(map[string]bool)
+	for _, tool := range tools {
+		toolMap[tool.Name] = true
+	}
+
+	require.True(t, toolMap["whois_lookup"], "whois_lookup should always be present")
+	require.True(t, toolMap["generate_pdf"], "generate_pdf should always be present")
+	require.Len(t, tools, 2, "Only utility tools should be present when nothing is configured")
 }
 
 func TestExecuteGitHubGetFileWithoutToken(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -14,8 +13,9 @@ import (
 
 // ClaudeCodeRunner handles running Claude Code CLI for investigations.
 type ClaudeCodeRunner struct {
-	logger *slog.Logger
-	model  string
+	logger     *slog.Logger
+	model      string
+	toolConfig ToolConfig
 }
 
 // NewClaudeCodeRunner creates a new Claude Code runner.
@@ -26,8 +26,9 @@ func NewClaudeCodeRunner(model string, logger *slog.Logger) (result *ClaudeCodeR
 	}
 
 	result = &ClaudeCodeRunner{
-		logger: logger,
-		model:  model,
+		logger:     logger,
+		model:      model,
+		toolConfig: NewToolConfig(),
 	}
 
 	return result
@@ -57,10 +58,7 @@ func (r *ClaudeCodeRunner) RunInvestigation(ctx context.Context, skill *investig
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.Dir = "/app" // Set working directory to /app where .mcp.json is located
-	cmd.Env = append(os.Environ(),
-		"ANTHROPIC_API_KEY="+os.Getenv("ANTHROPIC_API_KEY"),
-		"LOKI_ENDPOINT="+os.Getenv("LOKI_ENDPOINT"),
-	)
+	cmd.Env = buildClaudeEnv()
 
 	err = cmd.Run()
 
@@ -109,14 +107,8 @@ func (r *ClaudeCodeRunner) buildPrompt(skill *investigations.InvestigationSkill,
 	builder.WriteString(userMessage)
 	builder.WriteString("\n\n")
 
-	// Tool usage instructions
-	builder.WriteString("# Available Tools\n\n")
-	builder.WriteString("You have access to these MCP tools:\n\n")
-	builder.WriteString("- **query_loki**: Query Loki for ModSecurity WAF logs. Use LogQL syntax.\n")
-	builder.WriteString("  Example: `{realm=\"prod\", namespace=\"ingress-nginx\"} |~ \"ModSecurity\" | json | transaction_response_http_code=\"403\"`\n\n")
-	builder.WriteString("- **whois_lookup**: Look up IP address geolocation, ISP, ASN.\n\n")
-	builder.WriteString("Use these tools to gather data and perform your investigation. ")
-	builder.WriteString("Start by querying Loki for relevant time periods, then analyze the results.\n\n")
+	// Tool usage instructions (dynamic based on configured services)
+	r.toolConfig.WriteToolUsage(&builder)
 
 	// Output format
 	builder.WriteString("# Output Format\n\n")

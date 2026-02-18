@@ -399,10 +399,28 @@ func TestProcessRequestToolsList(t *testing.T) {
 		t.Fatal("processRequest(tools/list) tools is not []MCPTool")
 	}
 
-	// Should have all 22 tools (including 3 CloudWatch tools, 2 Database tools, and 5 Prometheus tools)
-	expectedCount := 22
-	if len(toolsList) != expectedCount {
-		t.Errorf("processRequest(tools/list) returned %d tools, want %d", len(toolsList), expectedCount)
+	// Should have tools matching the server configuration
+	// The test server has Loki client + utility tools (whois, PDF) = 3 minimum
+	if len(toolsList) < 3 {
+		t.Errorf("processRequest(tools/list) returned %d tools, want at least 3 (Loki + utilities)", len(toolsList))
+	}
+
+	// Verify utility tools are always present
+	toolMap := make(map[string]bool)
+	for _, tool := range toolsList {
+		toolMap[tool.Name] = true
+	}
+
+	if !toolMap["whois_lookup"] {
+		t.Error("processRequest(tools/list) missing whois_lookup utility tool")
+	}
+
+	if !toolMap["generate_pdf"] {
+		t.Error("processRequest(tools/list) missing generate_pdf utility tool")
+	}
+
+	if !toolMap["query_loki"] {
+		t.Error("processRequest(tools/list) missing query_loki tool (server has Loki client)")
 	}
 }
 
@@ -933,8 +951,8 @@ func TestAllToolsCanBeExecutedViaHTTP(t *testing.T) {
 
 	httpServer := newTestHTTPServer(t)
 
-	// Get all tool names
-	tools := getToolDefinitions()
+	// Get all tool names from the server (only configured tools)
+	tools := httpServer.server.getToolDefinitions()
 	ctx := context.Background()
 
 	for _, tool := range tools {

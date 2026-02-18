@@ -631,23 +631,47 @@ func getGrafanaModifyTools() (result []MCPTool) {
 	return result
 }
 
-// getToolDefinitions returns the list of available MCP tool definitions.
-func getToolDefinitions() (result []MCPTool) {
-	result = append(result, getLokiTools()...)
+// getToolDefinitions returns the list of available MCP tool definitions
+// based on which backing services are configured.
+func (s *Server) getToolDefinitions() (result []MCPTool) {
+	if s.lokiClient != nil {
+		result = append(result, getLokiTools()...)
+	}
+
+	// Utility tools (whois, PDF) are always available
 	result = append(result, getUtilityTools()...)
-	result = append(result, getGitHubTools()...)
-	result = append(result, getECRTools()...)
-	result = append(result, getDatabaseTools()...)
-	result = append(result, getGrafanaTools()...)
-	result = append(result, getCloudWatchTools()...)
-	result = append(result, getPrometheusTools()...)
+
+	if s.githubClient != nil {
+		result = append(result, getGitHubTools()...)
+	}
+
+	// ECR uses the default AWS credential chain; include if AWS is configured
+	if os.Getenv("AWS_REGION") != "" || os.Getenv("AWS_DEFAULT_REGION") != "" {
+		result = append(result, getECRTools()...)
+	}
+
+	if len(s.dbClients) > 0 {
+		result = append(result, getDatabaseTools()...)
+	}
+
+	if s.grafanaClient != nil {
+		result = append(result, getGrafanaTools()...)
+	}
+
+	if os.Getenv("CLOUDWATCH_ASSUME_ROLE") != "" {
+		result = append(result, getCloudWatchTools()...)
+	}
+
+	if len(s.prometheusClients) > 0 {
+		result = append(result, getPrometheusTools()...)
+	}
 
 	return result
 }
 
 // handleListTools returns the list of available tools.
 func (s *Server) handleListTools(_ context.Context, req MCPRequest) {
-	tools := getToolDefinitions()
+	tools := s.getToolDefinitions()
 
 	response := MCPResponse{
 		JSONRPC: "2.0",
