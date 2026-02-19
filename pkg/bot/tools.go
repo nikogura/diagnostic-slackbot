@@ -147,7 +147,7 @@ func writeGrafanaToolUsage(builder *strings.Builder) {
 	builder.WriteString("**Grafana:**\n")
 	builder.WriteString("- `grafana_list_dashboards`: List all Grafana dashboards\n")
 	builder.WriteString("- `grafana_get_dashboard`: Get a specific Grafana dashboard by UID\n")
-	builder.WriteString("- `grafana_create_dashboard`: Create a new Grafana dashboard\n")
+	builder.WriteString("- `grafana_create_dashboard`: Create a new Grafana dashboard (supports postgres, mysql, prometheus, cloudwatch, and infinity datasources)\n")
 	builder.WriteString("- `grafana_update_dashboard`: Update an existing Grafana dashboard\n")
 	builder.WriteString("- `grafana_delete_dashboard`: Delete a Grafana dashboard\n\n")
 }

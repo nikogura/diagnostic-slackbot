@@ -77,6 +77,38 @@ type Target struct {
 	Alias         string                 `json:"alias,omitempty"`
 	IntervalMs    int                    `json:"intervalMs,omitempty"`
 	MaxDataPoints int                    `json:"maxDataPoints,omitempty"`
+
+	// Infinity datasource fields
+	InfinityType string              `json:"type,omitempty"`
+	Source       string              `json:"source,omitempty"`
+	URL          string              `json:"url,omitempty"`
+	URLOptions   *InfinityURLOptions `json:"url_options,omitempty"`
+	RootSelector string              `json:"root_selector,omitempty"`
+	Columns      []InfinityColumn    `json:"columns,omitempty"`
+	Parser       string              `json:"parser,omitempty"`
+}
+
+// InfinityURLOptions configures HTTP request options for Infinity datasource.
+type InfinityURLOptions struct {
+	Method          string                 `json:"method,omitempty"`
+	Body            string                 `json:"data,omitempty"`
+	BodyType        string                 `json:"body_type,omitempty"`
+	BodyContentType string                 `json:"body_content_type,omitempty"`
+	Headers         []InfinityKeyValuePair `json:"headers,omitempty"`
+	Params          []InfinityKeyValuePair `json:"params,omitempty"`
+}
+
+// InfinityKeyValuePair represents a key-value pair for Infinity headers or params.
+type InfinityKeyValuePair struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// InfinityColumn defines a column mapping for Infinity datasource responses.
+type InfinityColumn struct {
+	Selector string `json:"selector"`
+	Text     string `json:"text"`
+	Type     string `json:"type"` // "string", "number", "timestamp", "timestamp_epoch"
 }
 
 // DashboardSaveRequest represents the request to save a dashboard.
@@ -336,6 +368,9 @@ func (c *GrafanaClient) buildPanelTarget(queryConfig PanelQueryConfig) (target T
 	case "cloudwatch":
 		c.buildCloudWatchTarget(&target, queryConfig)
 
+	case "yesoreyeram-infinity-datasource":
+		c.buildInfinityTarget(&target, queryConfig)
+
 	default:
 		target.Query = queryConfig.Query
 	}
@@ -377,8 +412,71 @@ func (c *GrafanaClient) buildCloudWatchTarget(target *Target, queryConfig PanelQ
 	}
 }
 
+// buildInfinityTarget builds Infinity datasource-specific target configuration.
+func (c *GrafanaClient) buildInfinityTarget(target *Target, queryConfig PanelQueryConfig) {
+	// Set Infinity type (json, graphql, csv, xml) — default to json
+	target.InfinityType = queryConfig.InfinityQueryType
+	if target.InfinityType == "" {
+		target.InfinityType = "json"
+	}
+
+	// Set source (url, inline) — default to url
+	target.Source = queryConfig.InfinitySource
+	if target.Source == "" {
+		target.Source = "url"
+	}
+
+	// Set parser (simple, backend, uql, groq) — default to backend
+	target.Parser = queryConfig.InfinityParser
+	if target.Parser == "" {
+		target.Parser = "backend"
+	}
+
+	// Set format — default to table
+	target.Format = FormatTable
+	if queryConfig.Format != "" {
+		target.Format = queryConfig.Format
+	}
+
+	// Set URL override (empty means use datasource default)
+	target.URL = queryConfig.InfinityURL
+
+	// Set root selector for JSONPath
+	target.RootSelector = queryConfig.InfinityRootSelector
+
+	// Set column definitions
+	target.Columns = queryConfig.InfinityColumns
+
+	// Determine HTTP method — default to GET, but POST for GraphQL
+	method := queryConfig.InfinityMethod
+	if method == "" {
+		method = "GET"
+		if target.InfinityType == "graphql" {
+			method = "POST"
+		}
+	}
+
+	// Build URL options
+	urlOptions := &InfinityURLOptions{
+		Method: method,
+	}
+
+	// Set body and content type
+	if queryConfig.InfinityBody != "" {
+		urlOptions.Body = queryConfig.InfinityBody
+		urlOptions.BodyType = "raw"
+
+		// Default content type for GraphQL
+		if urlOptions.BodyContentType == "" && target.InfinityType == "graphql" {
+			urlOptions.BodyContentType = "application/json"
+		}
+	}
+
+	target.URLOptions = urlOptions
+}
+
 // CreateDashboardFromQueries creates a dashboard with panels based on any type of queries.
-// Supports SQL (PostgreSQL/MySQL), Prometheus (PromQL), and CloudWatch queries.
+// Supports SQL (PostgreSQL/MySQL), Prometheus (PromQL), CloudWatch, and Infinity queries.
 func (c *GrafanaClient) CreateDashboardFromQueries(ctx context.Context, title string, queries []PanelQueryConfig) (uid string, err error) {
 	dashboard := &Dashboard{
 		Title:    title,
@@ -596,7 +694,7 @@ type PanelQueryConfig struct {
 	Query          string            `json:"query"`     // SQL, PromQL, or CloudWatch query
 	PanelType      string            `json:"panelType"` // stat, timeseries, table, piechart, bargauge, gauge, heatmap
 	Description    string            `json:"description,omitempty"`
-	DatasourceType string            `json:"datasourceType"`       // postgres, prometheus, cloudwatch
+	DatasourceType string            `json:"datasourceType"`       // postgres, prometheus, cloudwatch, yesoreyeram-infinity-datasource
 	DatasourceUID  string            `json:"datasourceUID"`        // Specific datasource UID
 	Legend         string            `json:"legend,omitempty"`     // Legend format for Prometheus
 	Format         string            `json:"format,omitempty"`     // Query result format
@@ -607,6 +705,16 @@ type PanelQueryConfig struct {
 	MetricName     string            `json:"metricName,omitempty"` // CloudWatch metric name
 	Statistics     []string          `json:"statistics,omitempty"` // CloudWatch statistics
 	Dimensions     map[string]string `json:"dimensions,omitempty"` // CloudWatch dimensions
+
+	// Infinity datasource fields
+	InfinityQueryType    string           `json:"infinityQueryType,omitempty"`    // json, graphql, csv, xml
+	InfinityParser       string           `json:"infinityParser,omitempty"`       // simple, backend, uql, groq
+	InfinitySource       string           `json:"infinitySource,omitempty"`       // url, inline
+	InfinityURL          string           `json:"infinityUrl,omitempty"`          // Override URL (empty = datasource default)
+	InfinityMethod       string           `json:"infinityMethod,omitempty"`       // GET, POST
+	InfinityBody         string           `json:"infinityBody,omitempty"`         // Request body (GraphQL query, JSON)
+	InfinityRootSelector string           `json:"infinityRootSelector,omitempty"` // JSONPath root selector
+	InfinityColumns      []InfinityColumn `json:"infinityColumns,omitempty"`      // Column definitions
 }
 
 // SQLPanelConfig represents configuration for creating a panel from SQL (deprecated).

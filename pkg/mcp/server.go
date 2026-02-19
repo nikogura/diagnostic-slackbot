@@ -495,11 +495,138 @@ func getGrafanaWriteTools() (result []MCPTool) {
 	return result
 }
 
+// getPanelSchemaProperties returns the combined panel properties for the create dashboard tool schema.
+func getPanelSchemaProperties() (result map[string]interface{}) {
+	result = map[string]interface{}{
+		"title": map[string]interface{}{
+			"type":        "string",
+			"description": "Panel title",
+		},
+		"query": map[string]interface{}{
+			"type":        "string",
+			"description": "Query for the panel (SQL, PromQL, or CloudWatch query)",
+		},
+		"sql": map[string]interface{}{
+			"type":        "string",
+			"description": "SQL query (deprecated, use 'query' instead)",
+		},
+		"panelType": map[string]interface{}{
+			"type":        "string",
+			"description": "Panel visualization type",
+			"enum":        []string{"stat", "timeseries", "table", "piechart", "bargauge", "gauge", "heatmap"},
+		},
+		"datasourceType": map[string]interface{}{
+			"type":        "string",
+			"description": "Type of datasource (postgres, mysql, prometheus, cloudwatch, yesoreyeram-infinity-datasource)",
+			"enum":        []string{"postgres", "mysql", "prometheus", "cloudwatch", "yesoreyeram-infinity-datasource"},
+			"default":     "postgres",
+		},
+		"datasourceUID": map[string]interface{}{
+			"type":        "string",
+			"description": "UID of the specific datasource",
+			"default":     "postgres-main",
+		},
+		"description": map[string]interface{}{
+			"type":        "string",
+			"description": "Optional panel description",
+		},
+		"legend": map[string]interface{}{
+			"type":        "string",
+			"description": "Legend format for Prometheus queries (e.g., '{{instance}}')",
+		},
+		"region": map[string]interface{}{
+			"type":        "string",
+			"description": "AWS region for CloudWatch metrics (e.g., 'us-east-1')",
+		},
+		"namespace": map[string]interface{}{
+			"type":        "string",
+			"description": "CloudWatch namespace (e.g., 'AWS/EC2', 'AWS/RDS')",
+		},
+		"metricName": map[string]interface{}{
+			"type":        "string",
+			"description": "CloudWatch metric name (e.g., 'CPUUtilization')",
+		},
+		"statistics": map[string]interface{}{
+			"type":        "array",
+			"description": "CloudWatch statistics to fetch (e.g., ['Average', 'Maximum'])",
+			"items": map[string]interface{}{
+				"type": "string",
+				"enum": []string{"Average", "Sum", "Maximum", "Minimum", "SampleCount"},
+			},
+		},
+		"dimensions": map[string]interface{}{
+			"type":        "object",
+			"description": "CloudWatch dimensions as key-value pairs (e.g., {'InstanceId': 'i-123'})",
+			"additionalProperties": map[string]interface{}{
+				"type": "string",
+			},
+		},
+	}
+
+	// Add Infinity datasource properties
+	addInfinitySchemaProperties(result)
+
+	return result
+}
+
+// addInfinitySchemaProperties adds Infinity datasource-specific properties to the panel schema.
+func addInfinitySchemaProperties(props map[string]interface{}) {
+	props["infinityQueryType"] = map[string]interface{}{
+		"type":        "string",
+		"description": "Infinity query type: json, graphql, csv, xml (default: json)",
+	}
+	props["infinityParser"] = map[string]interface{}{
+		"type":        "string",
+		"description": "Infinity parser: simple, backend, uql, groq (default: backend)",
+	}
+	props["infinitySource"] = map[string]interface{}{
+		"type":        "string",
+		"description": "Infinity data source: url, inline (default: url)",
+	}
+	props["infinityUrl"] = map[string]interface{}{
+		"type":        "string",
+		"description": "Override URL for Infinity request (empty = use datasource default)",
+	}
+	props["infinityMethod"] = map[string]interface{}{
+		"type":        "string",
+		"description": "HTTP method for Infinity request: GET, POST (default: GET, POST for graphql)",
+	}
+	props["infinityBody"] = map[string]interface{}{
+		"type":        "string",
+		"description": "Request body for Infinity (GraphQL query string, JSON payload, etc.)",
+	}
+	props["infinityRootSelector"] = map[string]interface{}{
+		"type":        "string",
+		"description": "JSONPath root selector for Infinity response parsing",
+	}
+	props["infinityColumns"] = map[string]interface{}{
+		"type":        "array",
+		"description": "Column definitions for Infinity response mapping",
+		"items": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"selector": map[string]interface{}{
+					"type":        "string",
+					"description": "JSONPath selector for the column value",
+				},
+				"text": map[string]interface{}{
+					"type":        "string",
+					"description": "Display name for the column",
+				},
+				"type": map[string]interface{}{
+					"type":        "string",
+					"description": "Column data type: string, number, timestamp, timestamp_epoch",
+				},
+			},
+		},
+	}
+}
+
 // getGrafanaCreateDashboardTool returns the tool definition for creating dashboards.
 func getGrafanaCreateDashboardTool() (tool MCPTool) {
 	tool = MCPTool{
 		Name:        toolGrafanaCreateDashboard,
-		Description: "Create a new Grafana dashboard from queries. Supports SQL (PostgreSQL/MySQL), Prometheus (PromQL), and CloudWatch metrics. Ideal for CEO-level business and operational metrics dashboards.",
+		Description: "Create a new Grafana dashboard from queries. Supports SQL (PostgreSQL/MySQL), Prometheus (PromQL), CloudWatch metrics, and Infinity datasources (GraphQL/REST APIs). Ideal for CEO-level business and operational metrics dashboards.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -511,73 +638,9 @@ func getGrafanaCreateDashboardTool() (tool MCPTool) {
 					"type":        "array",
 					"description": "Array of panel configurations",
 					"items": map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"title": map[string]interface{}{
-								"type":        "string",
-								"description": "Panel title",
-							},
-							"query": map[string]interface{}{
-								"type":        "string",
-								"description": "Query for the panel (SQL, PromQL, or CloudWatch query)",
-							},
-							"sql": map[string]interface{}{
-								"type":        "string",
-								"description": "SQL query (deprecated, use 'query' instead)",
-							},
-							"panelType": map[string]interface{}{
-								"type":        "string",
-								"description": "Panel visualization type",
-								"enum":        []string{"stat", "timeseries", "table", "piechart", "bargauge", "gauge", "heatmap"},
-							},
-							"datasourceType": map[string]interface{}{
-								"type":        "string",
-								"description": "Type of datasource (postgres, mysql, prometheus, cloudwatch)",
-								"enum":        []string{"postgres", "mysql", "prometheus", "cloudwatch"},
-								"default":     "postgres",
-							},
-							"datasourceUID": map[string]interface{}{
-								"type":        "string",
-								"description": "UID of the specific datasource",
-								"default":     "postgres-main",
-							},
-							"description": map[string]interface{}{
-								"type":        "string",
-								"description": "Optional panel description",
-							},
-							"legend": map[string]interface{}{
-								"type":        "string",
-								"description": "Legend format for Prometheus queries (e.g., '{{instance}}')",
-							},
-							"region": map[string]interface{}{
-								"type":        "string",
-								"description": "AWS region for CloudWatch metrics (e.g., 'us-east-1')",
-							},
-							"namespace": map[string]interface{}{
-								"type":        "string",
-								"description": "CloudWatch namespace (e.g., 'AWS/EC2', 'AWS/RDS')",
-							},
-							"metricName": map[string]interface{}{
-								"type":        "string",
-								"description": "CloudWatch metric name (e.g., 'CPUUtilization')",
-							},
-							"statistics": map[string]interface{}{
-								"type":        "array",
-								"description": "CloudWatch statistics to fetch (e.g., ['Average', 'Maximum'])",
-								"items": map[string]interface{}{
-									"type": "string",
-									"enum": []string{"Average", "Sum", "Maximum", "Minimum", "SampleCount"},
-								},
-							},
-							"dimensions": map[string]interface{}{
-								"type":        "object",
-								"description": "CloudWatch dimensions as key-value pairs (e.g., {'InstanceId': 'i-123'})",
-								"additionalProperties": map[string]interface{}{
-									"type": "string",
-								},
-							},
-						},
-						"required": []string{"title", "panelType"},
+						"type":       "object",
+						"properties": getPanelSchemaProperties(),
+						"required":   []string{"title", "panelType"},
 					},
 				},
 			},
@@ -1256,7 +1319,40 @@ func (s *Server) parseSinglePanelConfig(panelMap map[string]interface{}) (panel 
 		}
 	}
 
+	// Parse Infinity datasource fields
+	parseInfinityPanelFields(&panel, panelMap)
+
 	return panel
+}
+
+// parseInfinityPanelFields extracts Infinity datasource fields from a raw panel map.
+func parseInfinityPanelFields(panel *PanelQueryConfig, panelMap map[string]interface{}) {
+	panel.InfinityQueryType, _ = panelMap["infinityQueryType"].(string)
+	panel.InfinityParser, _ = panelMap["infinityParser"].(string)
+	panel.InfinitySource, _ = panelMap["infinitySource"].(string)
+	panel.InfinityURL, _ = panelMap["infinityUrl"].(string)
+	panel.InfinityMethod, _ = panelMap["infinityMethod"].(string)
+	panel.InfinityBody, _ = panelMap["infinityBody"].(string)
+	panel.InfinityRootSelector, _ = panelMap["infinityRootSelector"].(string)
+
+	// Parse Infinity columns array
+	colsRaw, colsOk := panelMap["infinityColumns"].([]interface{})
+	if !colsOk {
+		return
+	}
+
+	for _, colRaw := range colsRaw {
+		colMap, colOk := colRaw.(map[string]interface{})
+		if !colOk {
+			continue
+		}
+
+		col := InfinityColumn{}
+		col.Selector, _ = colMap["selector"].(string)
+		col.Text, _ = colMap["text"].(string)
+		col.Type, _ = colMap["type"].(string)
+		panel.InfinityColumns = append(panel.InfinityColumns, col)
+	}
 }
 
 // executeGrafanaCreateDashboard creates a new dashboard from queries (SQL, PromQL, CloudWatch).

@@ -435,3 +435,95 @@ func TestGitHubToolInputSchemas(t *testing.T) {
 		}
 	}
 }
+
+func TestGrafanaCreateDashboardToolSchemaIncludesInfinity(t *testing.T) {
+	t.Parallel()
+
+	tool := getGrafanaCreateDashboardTool()
+
+	require.Equal(t, toolGrafanaCreateDashboard, tool.Name)
+
+	// Navigate to the panels items -> properties -> datasourceType -> enum
+	panels, ok := tool.InputSchema["properties"].(map[string]interface{})["panels"].(map[string]interface{})
+	require.True(t, ok, "panels property should exist")
+
+	items, ok := panels["items"].(map[string]interface{})
+	require.True(t, ok, "panels items should exist")
+
+	props, ok := items["properties"].(map[string]interface{})
+	require.True(t, ok, "panel properties should exist")
+
+	dsType, ok := props["datasourceType"].(map[string]interface{})
+	require.True(t, ok, "datasourceType property should exist")
+
+	enumValues, ok := dsType["enum"].([]string)
+	require.True(t, ok, "datasourceType enum should be []string")
+	require.Contains(t, enumValues, "yesoreyeram-infinity-datasource",
+		"datasourceType enum should include yesoreyeram-infinity-datasource")
+
+	// Verify Infinity-specific properties exist
+	infinityFields := []string{
+		"infinityQueryType", "infinityParser", "infinitySource",
+		"infinityUrl", "infinityMethod", "infinityBody",
+		"infinityRootSelector", "infinityColumns",
+	}
+	for _, field := range infinityFields {
+		_, exists := props[field]
+		require.True(t, exists, "panel properties should include %s", field)
+	}
+}
+
+func TestParseSinglePanelConfigInfinity(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	server := &Server{logger: logger}
+
+	panelMap := map[string]interface{}{
+		"title":                "Wiz Critical Vulns",
+		"panelType":            "table",
+		"datasourceType":       "yesoreyeram-infinity-datasource",
+		"datasourceUID":        "wiz-infinity",
+		"infinityQueryType":    "graphql",
+		"infinityParser":       "backend",
+		"infinitySource":       "url",
+		"infinityUrl":          "https://api.wiz.io/graphql",
+		"infinityMethod":       "POST",
+		"infinityBody":         `{"query": "{ issues { id severity } }"}`,
+		"infinityRootSelector": "data.issues",
+		"infinityColumns": []interface{}{
+			map[string]interface{}{
+				"selector": "id",
+				"text":     "Issue ID",
+				"type":     "string",
+			},
+			map[string]interface{}{
+				"selector": "severity",
+				"text":     "Severity",
+				"type":     "string",
+			},
+		},
+	}
+
+	panel := server.parseSinglePanelConfig(panelMap)
+
+	require.Equal(t, "Wiz Critical Vulns", panel.Title)
+	require.Equal(t, "table", panel.PanelType)
+	require.Equal(t, "yesoreyeram-infinity-datasource", panel.DatasourceType)
+	require.Equal(t, "wiz-infinity", panel.DatasourceUID)
+	require.Equal(t, "graphql", panel.InfinityQueryType)
+	require.Equal(t, "backend", panel.InfinityParser)
+	require.Equal(t, "url", panel.InfinitySource)
+	require.Equal(t, "https://api.wiz.io/graphql", panel.InfinityURL)
+	require.Equal(t, "POST", panel.InfinityMethod)
+	require.JSONEq(t, `{"query": "{ issues { id severity } }"}`, panel.InfinityBody)
+	require.Equal(t, "data.issues", panel.InfinityRootSelector)
+	require.Len(t, panel.InfinityColumns, 2)
+	require.Equal(t, "id", panel.InfinityColumns[0].Selector)
+	require.Equal(t, "Issue ID", panel.InfinityColumns[0].Text)
+	require.Equal(t, "string", panel.InfinityColumns[0].Type)
+	require.Equal(t, "severity", panel.InfinityColumns[1].Selector)
+}

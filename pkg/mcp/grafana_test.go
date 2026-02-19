@@ -517,3 +517,177 @@ func TestGrafanaClientCreateDashboardFromQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "multi-datasource-uid", uid)
 }
+
+func TestBuildPanelTargetInfinityDefaults(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	client, err := NewGrafanaClient("http://grafana.example.com", "test-key", logger)
+	require.NoError(t, err)
+
+	queryConfig := PanelQueryConfig{
+		DatasourceType: "yesoreyeram-infinity-datasource",
+		DatasourceUID:  "infinity-uid",
+	}
+
+	target := client.buildPanelTarget(queryConfig)
+
+	// Verify defaults
+	assert.Equal(t, "json", target.InfinityType, "default InfinityType should be json")
+	assert.Equal(t, "url", target.Source, "default Source should be url")
+	assert.Equal(t, "backend", target.Parser, "default Parser should be backend")
+	assert.Equal(t, FormatTable, target.Format, "default Format should be table")
+	require.NotNil(t, target.URLOptions, "URLOptions should not be nil")
+	assert.Equal(t, "GET", target.URLOptions.Method, "default method should be GET")
+
+	// Verify datasource
+	assert.Equal(t, "yesoreyeram-infinity-datasource", target.Datasource["type"])
+	assert.Equal(t, "infinity-uid", target.Datasource["uid"])
+}
+
+func TestBuildPanelTargetInfinityGraphQL(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	client, err := NewGrafanaClient("http://grafana.example.com", "test-key", logger)
+	require.NoError(t, err)
+
+	graphqlBody := `{"query": "{ vulnerabilities { id severity } }"}`
+	queryConfig := PanelQueryConfig{
+		DatasourceType:       "yesoreyeram-infinity-datasource",
+		DatasourceUID:        "wiz-infinity",
+		InfinityQueryType:    "graphql",
+		InfinityBody:         graphqlBody,
+		InfinityRootSelector: "data.vulnerabilities",
+		InfinityColumns: []InfinityColumn{
+			{Selector: "id", Text: "ID", Type: "string"},
+			{Selector: "severity", Text: "Severity", Type: "string"},
+		},
+	}
+
+	target := client.buildPanelTarget(queryConfig)
+
+	// GraphQL defaults: method=POST, body_content_type=application/json
+	assert.Equal(t, "graphql", target.InfinityType)
+	require.NotNil(t, target.URLOptions)
+	assert.Equal(t, "POST", target.URLOptions.Method, "GraphQL should default to POST")
+	assert.Equal(t, "application/json", target.URLOptions.BodyContentType, "GraphQL should default to application/json")
+	assert.Equal(t, graphqlBody, target.URLOptions.Body)
+	assert.Equal(t, "raw", target.URLOptions.BodyType)
+
+	// Verify root selector and columns
+	assert.Equal(t, "data.vulnerabilities", target.RootSelector)
+	require.Len(t, target.Columns, 2)
+	assert.Equal(t, "id", target.Columns[0].Selector)
+	assert.Equal(t, "ID", target.Columns[0].Text)
+	assert.Equal(t, "string", target.Columns[0].Type)
+}
+
+func TestBuildPanelTargetInfinity(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	client, err := NewGrafanaClient("http://grafana.example.com", "test-key", logger)
+	require.NoError(t, err)
+
+	queryConfig := PanelQueryConfig{
+		DatasourceType:       "yesoreyeram-infinity-datasource",
+		DatasourceUID:        "rest-api",
+		InfinityQueryType:    "json",
+		InfinityParser:       "simple",
+		InfinitySource:       "url",
+		InfinityURL:          "https://api.example.com/data",
+		InfinityMethod:       "GET",
+		InfinityRootSelector: "results",
+		InfinityColumns: []InfinityColumn{
+			{Selector: "name", Text: "Name", Type: "string"},
+			{Selector: "count", Text: "Count", Type: "number"},
+		},
+		Format: "time_series",
+	}
+
+	target := client.buildPanelTarget(queryConfig)
+
+	assert.Equal(t, "json", target.InfinityType)
+	assert.Equal(t, "url", target.Source)
+	assert.Equal(t, "simple", target.Parser)
+	assert.Equal(t, "time_series", target.Format, "should respect explicit format override")
+	assert.Equal(t, "https://api.example.com/data", target.URL)
+	assert.Equal(t, "results", target.RootSelector)
+	require.NotNil(t, target.URLOptions)
+	assert.Equal(t, "GET", target.URLOptions.Method)
+	require.Len(t, target.Columns, 2)
+	assert.Equal(t, "name", target.Columns[0].Selector)
+	assert.Equal(t, "number", target.Columns[1].Type)
+}
+
+func TestCreateDashboardFromQueriesInfinity(t *testing.T) {
+	// Cannot run in parallel due to shared resources
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	ctx := context.Background()
+
+	queries := []PanelQueryConfig{
+		{
+			Title:                "Wiz Vulnerabilities",
+			PanelType:            "table",
+			DatasourceType:       "yesoreyeram-infinity-datasource",
+			DatasourceUID:        "wiz-infinity",
+			InfinityQueryType:    "graphql",
+			InfinityBody:         `{"query": "{ vulnerabilities { id severity } }"}`,
+			InfinityRootSelector: "data.vulnerabilities",
+			InfinityColumns: []InfinityColumn{
+				{Selector: "id", Text: "ID", Type: "string"},
+				{Selector: "severity", Text: "Severity", Type: "string"},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/dashboards/db", r.URL.Path)
+
+		var req DashboardSaveRequest
+		decodeErr := json.NewDecoder(r.Body).Decode(&req)
+		assert.NoError(t, decodeErr)
+
+		// Verify dashboard structure
+		assert.Equal(t, "Infinity Dashboard", req.Dashboard.Title)
+		assert.Len(t, req.Dashboard.Panels, 1)
+
+		// Verify Infinity panel
+		panel := req.Dashboard.Panels[0]
+		assert.Equal(t, "table", panel.Type)
+		assert.Equal(t, "Wiz Vulnerabilities", panel.Title)
+		assert.Equal(t, "yesoreyeram-infinity-datasource", panel.Datasource["type"])
+		assert.Equal(t, "wiz-infinity", panel.Datasource["uid"])
+
+		// Verify target
+		assert.Len(t, panel.Targets, 1)
+		target := panel.Targets[0]
+		assert.Equal(t, "graphql", target.InfinityType)
+		assert.Equal(t, "url", target.Source)
+		assert.Equal(t, "backend", target.Parser)
+		assert.Equal(t, "data.vulnerabilities", target.RootSelector)
+		assert.NotNil(t, target.URLOptions)
+		assert.Equal(t, "POST", target.URLOptions.Method)
+		assert.Equal(t, "application/json", target.URLOptions.BodyContentType)
+		assert.Len(t, target.Columns, 2)
+
+		response := `{
+			"id": 999,
+			"uid": "infinity-dash-uid",
+			"url": "/d/infinity-dash-uid/infinity-dashboard",
+			"status": "success"
+		}`
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(response))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewGrafanaClient(server.URL, "test-api-key", logger)
+	require.NoError(t, err)
+
+	uid, err := client.CreateDashboardFromQueries(ctx, "Infinity Dashboard", queries)
+	require.NoError(t, err)
+	assert.Equal(t, "infinity-dash-uid", uid)
+}

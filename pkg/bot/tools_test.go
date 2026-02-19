@@ -251,6 +251,19 @@ func TestWriteToolUsageAllEnabled(t *testing.T) {
 	}
 }
 
+func TestWriteToolUsageGrafanaMentionsInfinity(t *testing.T) {
+	t.Parallel()
+
+	config := ToolConfig{GrafanaAvailable: true}
+
+	var builder strings.Builder
+	config.WriteToolUsage(&builder)
+	output := builder.String()
+
+	assert.Contains(t, output, "grafana_create_dashboard", "Should include grafana_create_dashboard")
+	assert.Contains(t, output, "infinity", "Grafana create dashboard description should mention infinity")
+}
+
 func TestBuildClaudeEnv(t *testing.T) {
 	t.Parallel()
 
