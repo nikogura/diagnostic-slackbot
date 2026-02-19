@@ -696,4 +696,3 @@ Contributions are welcome! Please:
 ## Maintainer
 
 [Nik Ogura](https://github.com/nikogura)
-
