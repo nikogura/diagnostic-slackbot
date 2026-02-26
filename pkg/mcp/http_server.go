@@ -424,6 +424,16 @@ func (h *HTTPServer) executeTool(ctx context.Context, params MCPToolCallParams) 
 	case toolGrafanaDeleteDashboard:
 		result, err = h.server.executeGrafanaDeleteDashboard(ctx, params.Arguments)
 
+	default:
+		result, err = h.executeExtendedTool(ctx, params)
+	}
+
+	return result, err
+}
+
+// executeExtendedTool handles CloudWatch, Prometheus, and GraphQL tool dispatch via HTTP.
+func (h *HTTPServer) executeExtendedTool(ctx context.Context, params MCPToolCallParams) (result string, err error) {
+	switch params.Name {
 	case toolCloudWatchLogsQuery:
 		result, err = h.server.executeCloudWatchLogsQuery(ctx, params.Arguments)
 
@@ -447,6 +457,12 @@ func (h *HTTPServer) executeTool(ctx context.Context, params MCPToolCallParams) 
 
 	case toolPrometheusListEndpoints:
 		result, err = h.server.executePrometheusListEndpoints(ctx, params.Arguments)
+
+	case toolGraphQLQuery:
+		result, err = h.server.executeGraphQLQuery(ctx, params.Arguments)
+
+	case toolGraphQLListEndpoints:
+		result, err = h.server.executeGraphQLListEndpoints(ctx, params.Arguments)
 
 	default:
 		err = fmt.Errorf("unknown tool: %s", params.Name)
