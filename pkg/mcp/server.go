@@ -51,6 +51,7 @@ type Server struct {
 	githubClient      *github.Client
 	dbClients         map[string]*DatabaseClient
 	grafanaClient     *GrafanaClient
+	graphqlClients    map[string]*GraphQLClient
 	prometheusClients map[string]*PrometheusClient
 	logger            *slog.Logger
 	companyName       string
@@ -108,6 +109,10 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 		logger.Info("GRAFANA_URL or GRAFANA_API_KEY not provided - Grafana tools will be unavailable")
 	}
 
+	// Initialize GraphQL clients from environment variables
+	// Supports GRAPHQL_URL (default) and GRAPHQL_<NAME>_URL patterns
+	graphqlClients := LoadGraphQLClients(logger)
+
 	// Initialize Prometheus clients from environment variables
 	// Supports PROMETHEUS_URL (default) and PROMETHEUS_<NAME>_URL patterns
 	prometheusClients := LoadPrometheusClients(logger)
@@ -123,6 +128,7 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 		githubClient:      githubClient,
 		dbClients:         dbClients,
 		grafanaClient:     grafanaClient,
+		graphqlClients:    graphqlClients,
 		prometheusClients: prometheusClients,
 		logger:            logger,
 		companyName:       companyName,
@@ -729,6 +735,10 @@ func (s *Server) getToolDefinitions() (result []MCPTool) {
 		result = append(result, getPrometheusTools()...)
 	}
 
+	if len(s.graphqlClients) > 0 {
+		result = append(result, getGraphQLTools()...)
+	}
+
 	return result
 }
 
@@ -802,6 +812,16 @@ func (s *Server) dispatchToolCall(ctx context.Context, toolName string, args map
 		result, err = s.executeGrafanaUpdateDashboard(ctx, args)
 	case toolGrafanaDeleteDashboard:
 		result, err = s.executeGrafanaDeleteDashboard(ctx, args)
+	default:
+		result, err = s.dispatchExtendedToolCall(ctx, toolName, args)
+	}
+
+	return result, err
+}
+
+// dispatchExtendedToolCall handles CloudWatch, Prometheus, and GraphQL tool dispatch.
+func (s *Server) dispatchExtendedToolCall(ctx context.Context, toolName string, args map[string]interface{}) (result string, err error) {
+	switch toolName {
 	case toolCloudWatchLogsQuery:
 		result, err = s.executeCloudWatchLogsQuery(ctx, args)
 	case toolCloudWatchLogsListGroups:
@@ -818,6 +838,10 @@ func (s *Server) dispatchToolCall(ctx context.Context, toolName string, args map
 		result, err = s.executePrometheusLabelValues(ctx, args)
 	case toolPrometheusListEndpoints:
 		result, err = s.executePrometheusListEndpoints(ctx, args)
+	case toolGraphQLQuery:
+		result, err = s.executeGraphQLQuery(ctx, args)
+	case toolGraphQLListEndpoints:
+		result, err = s.executeGraphQLListEndpoints(ctx, args)
 	default:
 		err = fmt.Errorf("unknown tool: %s", toolName)
 	}
