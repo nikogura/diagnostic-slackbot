@@ -2,17 +2,26 @@ package metrics
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// HealthChecker provides health status information for probes.
+type HealthChecker interface {
+	IsSocketConnected() bool
+	LastEvent() time.Time
+}
+
 // Server provides HTTP endpoints for health checks and metrics.
 type Server struct {
-	Address string
-	Logger  *slog.Logger
+	Address       string
+	Logger        *slog.Logger
+	healthChecker HealthChecker
 }
 
 // NewServer creates a new metrics server.
@@ -25,12 +34,18 @@ func NewServer(address string, logger *slog.Logger) (result *Server) {
 	return result
 }
 
+// SetHealthChecker sets the health checker used by liveness and readiness probes.
+func (s *Server) SetHealthChecker(checker HealthChecker) {
+	s.healthChecker = checker
+}
+
 // Start starts the metrics server.
 func (s *Server) Start(ctx context.Context) (err error) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", s.LivenessHandler)
 	mux.HandleFunc("/readyz", s.ReadinessHandler)
+	mux.HandleFunc("/health", s.DetailedHealthHandler)
 	mux.Handle("/metrics", promhttp.Handler())
 
 	server := &http.Server{
@@ -63,13 +78,76 @@ func (s *Server) Start(ctx context.Context) (err error) {
 }
 
 // LivenessHandler handles liveness probe requests.
-func (s *Server) LivenessHandler(w http.ResponseWriter, r *http.Request) {
+// Returns unhealthy if the Slack socket connection has been dead for too long.
+func (s *Server) LivenessHandler(w http.ResponseWriter, _ *http.Request) {
+	if s.healthChecker == nil {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+		return
+	}
+
+	connected := s.healthChecker.IsSocketConnected()
+	lastEvent := s.healthChecker.LastEvent()
+
+	// If socket disconnected and last event was more than 5 minutes ago, fail liveness.
+	// This gives the bot time for initial connection and brief reconnects.
+	if !connected && !lastEvent.IsZero() {
+		staleDuration := time.Since(lastEvent)
+		if staleDuration > 5*time.Minute {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprintf(w, "unhealthy: socket disconnected for %s", staleDuration.Truncate(time.Second))
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
 
 // ReadinessHandler handles readiness probe requests.
-func (s *Server) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
+// Returns not-ready if the Slack socket is not connected.
+func (s *Server) ReadinessHandler(w http.ResponseWriter, _ *http.Request) {
+	if s.healthChecker == nil {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready"))
+		return
+	}
+
+	if !s.healthChecker.IsSocketConnected() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("not ready: slack socket not connected"))
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ready"))
+}
+
+// DetailedHealthHandler returns full health status as JSON.
+func (s *Server) DetailedHealthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.healthChecker == nil {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "detail": "no health checker configured"})
+		return
+	}
+
+	connected := s.healthChecker.IsSocketConnected()
+
+	overallStatus := "healthy"
+	if !connected {
+		overallStatus = "degraded"
+		w.WriteHeader(http.StatusServiceUnavailable)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	response := map[string]interface{}{
+		"status":           overallStatus,
+		"socket_connected": connected,
+		"last_event_time":  s.healthChecker.LastEvent(),
+	}
+
+	_ = json.NewEncoder(w).Encode(response)
 }

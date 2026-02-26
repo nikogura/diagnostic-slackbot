@@ -71,8 +71,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start metrics server
+	// Start metrics server with bot health checker
 	metricsServer := metrics.NewServer(":9090", logger)
+	metricsServer.SetHealthChecker(diagnosticBot)
 
 	go func() {
 		metricsErr := metricsServer.Start(ctx)

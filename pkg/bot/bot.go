@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nikogura/diagnostic-slackbot/pkg/investigations"
@@ -38,6 +39,11 @@ type Bot struct {
 	logger           *slog.Logger
 	botUserID        string
 	fileRetention    time.Duration
+
+	// Health tracking
+	healthMu        sync.RWMutex
+	socketConnected bool
+	lastEventTime   time.Time
 }
 
 // Config holds the bot configuration.
@@ -137,10 +143,25 @@ func (b *Bot) handleSocketMode(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			b.setSocketConnected(false)
 			return
 
 		case evt := <-b.socketClient.Events:
+			b.recordEvent()
+
 			switch evt.Type { //nolint:exhaustive // Only handling core event types, others are ignored
+			case socketmode.EventTypeConnected:
+				b.setSocketConnected(true)
+				b.logger.InfoContext(ctx, "slack socket mode connected")
+
+			case socketmode.EventTypeConnectionError:
+				b.setSocketConnected(false)
+				b.logger.ErrorContext(ctx, "slack socket mode connection error")
+
+			case socketmode.EventTypeDisconnect:
+				b.setSocketConnected(false)
+				b.logger.WarnContext(ctx, "slack socket mode disconnected")
+
 			case socketmode.EventTypeEventsAPI:
 				eventsAPI, ok := evt.Data.(slackevents.EventsAPIEvent)
 				if !ok {
@@ -160,7 +181,7 @@ func (b *Bot) handleSocketMode(ctx context.Context) {
 				b.socketClient.Ack(*evt.Request)
 
 			default:
-				// Ignore other event types (connection events, errors, etc.)
+				// Ignore other event types
 			}
 		}
 	}
@@ -284,4 +305,38 @@ func (b *Bot) removeOldFile(ctx context.Context, filePath string, cutoff time.Ti
 func (b *Bot) stripMention(text string) (result string) {
 	result = strings.TrimSpace(strings.ReplaceAll(text, fmt.Sprintf("<@%s>", b.botUserID), ""))
 	return result
+}
+
+// IsSocketConnected returns whether the Slack socket mode connection is active.
+func (b *Bot) IsSocketConnected() (connected bool) {
+	b.healthMu.RLock()
+	defer b.healthMu.RUnlock()
+
+	connected = b.socketConnected
+	return connected
+}
+
+// LastEvent returns the time of the last received socket mode event.
+func (b *Bot) LastEvent() (lastEvent time.Time) {
+	b.healthMu.RLock()
+	defer b.healthMu.RUnlock()
+
+	lastEvent = b.lastEventTime
+	return lastEvent
+}
+
+// setSocketConnected updates the socket connection state.
+func (b *Bot) setSocketConnected(connected bool) {
+	b.healthMu.Lock()
+	defer b.healthMu.Unlock()
+
+	b.socketConnected = connected
+}
+
+// recordEvent records the time of the last received event.
+func (b *Bot) recordEvent() {
+	b.healthMu.Lock()
+	defer b.healthMu.Unlock()
+
+	b.lastEventTime = time.Now()
 }

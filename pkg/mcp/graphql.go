@@ -25,6 +25,7 @@ const (
 const (
 	graphqlEnvPrefix       = "GRAPHQL_"
 	graphqlURLSuffix       = "_URL"
+	graphqlAuthURLSuffix   = "_AUTH_URL"
 	graphqlTokenSuffix     = "_TOKEN"
 	graphqlHeaderPrefix    = "_HEADER_"
 	graphqlTimeout         = 30 * time.Second
@@ -196,6 +197,11 @@ func collectGraphQLURLs(logger *slog.Logger) (urls map[string]string) {
 
 		// Exclude keys that contain _HEADER_ (those are header env vars).
 		if strings.Contains(key, graphqlHeaderPrefix) {
+			continue
+		}
+
+		// Exclude OAuth2 auth URL keys (GRAPHQL_<NAME>_AUTH_URL).
+		if strings.HasSuffix(key, graphqlAuthURLSuffix) {
 			continue
 		}
 

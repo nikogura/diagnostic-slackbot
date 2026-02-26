@@ -586,6 +586,22 @@ func TestScanGraphQLEnvVars(t *testing.T) {
 		assert.Contains(t, clients, "alpha")
 		assert.Contains(t, clients, "beta")
 	})
+
+	t.Run("excludes_auth_url_vars", func(t *testing.T) {
+		t.Setenv("GRAPHQL_WIZ_URL", "https://api.wiz.io/graphql")
+		t.Setenv("GRAPHQL_WIZ_AUTH_URL", "https://auth.wiz.io/oauth/token")
+
+		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+		clients := scanGraphQLEnvVars(logger)
+
+		// Should have wiz but NOT wiz_auth.
+		assert.Len(t, clients, 1)
+		_, ok := clients["wiz"]
+		assert.True(t, ok)
+		_, ok = clients["wiz_auth"]
+		assert.False(t, ok, "GRAPHQL_WIZ_AUTH_URL should not create a wiz_auth endpoint")
+	})
 }
 
 // TestCollectGraphQLHeaders tests header collection from environment variables.
