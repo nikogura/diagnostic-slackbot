@@ -957,11 +957,16 @@ func TestGetCloudWatchTools(t *testing.T) {
 	assert.True(t, toolNames[toolCloudWatchLogsListGroups])
 	assert.True(t, toolNames[toolCloudWatchLogsGetEvents])
 
-	// Verify each tool has required fields
+	// Verify each tool has required fields and includes accounts property
 	for _, tool := range tools {
 		assert.NotEmpty(t, tool.Name)
 		assert.NotEmpty(t, tool.Description)
 		assert.NotNil(t, tool.InputSchema)
+
+		props, ok := tool.InputSchema["properties"].(map[string]interface{})
+		require.True(t, ok, "tool %s should have properties", tool.Name)
+		_, hasAccounts := props["accounts"]
+		assert.True(t, hasAccounts, "tool %s should have accounts property", tool.Name)
 	}
 }
 
@@ -1177,6 +1182,475 @@ func TestServerExecuteCloudWatchLogsGetEvents(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parsing start_time")
 	})
+}
+
+// TestLoadCloudWatchAccounts tests parsing the CLOUDWATCH_ACCOUNTS env var.
+func TestLoadCloudWatchAccounts(t *testing.T) {
+	tests := []struct {
+		name        string
+		envValue    string
+		expectCount int
+		expectError bool
+		expectNames []string
+	}{
+		{
+			name:        "empty_env",
+			envValue:    "",
+			expectCount: 0,
+			expectError: false,
+		},
+		{
+			name:        "valid_single_account",
+			envValue:    `{"prod":"arn:aws:iam::111111111111:role/prod-role"}`,
+			expectCount: 1,
+			expectError: false,
+			expectNames: []string{"prod"},
+		},
+		{
+			name:        "valid_multiple_accounts",
+			envValue:    `{"dev":"arn:aws:iam::111111111111:role/dev-role","prod":"arn:aws:iam::222222222222:role/prod-role","stage":"arn:aws:iam::333333333333:role/stage-role"}`,
+			expectCount: 3,
+			expectError: false,
+			expectNames: []string{"dev", "prod", "stage"}, // sorted
+		},
+		{
+			name:        "invalid_json",
+			envValue:    `not-json`,
+			expectCount: 0,
+			expectError: true,
+		},
+		{
+			name:        "empty_map",
+			envValue:    `{}`,
+			expectCount: 0,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(envCloudWatchAccounts, tt.envValue)
+
+			accounts, err := loadCloudWatchAccounts()
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, accounts, tt.expectCount)
+
+			if tt.expectNames != nil {
+				names := make([]string, 0, len(accounts))
+				for _, acct := range accounts {
+					names = append(names, acct.Name)
+				}
+				assert.Equal(t, tt.expectNames, names)
+			}
+		})
+	}
+}
+
+// TestResolveCloudWatchAccounts tests account name resolution.
+func TestResolveCloudWatchAccounts(t *testing.T) {
+	t.Parallel()
+
+	allAccounts := []CloudWatchAccountConfig{
+		{Name: "dev", RoleARN: "arn:dev"},
+		{Name: "prod", RoleARN: "arn:prod"},
+		{Name: "stage", RoleARN: "arn:stage"},
+	}
+
+	tests := []struct {
+		name        string
+		requested   []string
+		expectCount int
+		expectError bool
+		expectNames []string
+	}{
+		{
+			name:        "all_accounts_empty_request",
+			requested:   nil,
+			expectCount: 3,
+			expectNames: []string{"dev", "prod", "stage"},
+		},
+		{
+			name:        "single_account",
+			requested:   []string{"prod"},
+			expectCount: 1,
+			expectNames: []string{"prod"},
+		},
+		{
+			name:        "multiple_accounts",
+			requested:   []string{"dev", "prod"},
+			expectCount: 2,
+			expectNames: []string{"dev", "prod"},
+		},
+		{
+			name:        "unknown_account",
+			requested:   []string{"unknown"},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resolved, err := resolveCloudWatchAccounts(allAccounts, tt.requested)
+
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unknown account")
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, resolved, tt.expectCount)
+
+			if tt.expectNames != nil {
+				names := make([]string, 0, len(resolved))
+				for _, acct := range resolved {
+					names = append(names, acct.Name)
+				}
+				assert.Equal(t, tt.expectNames, names)
+			}
+		})
+	}
+}
+
+// TestParseAccountsToolArg tests the accounts parameter extraction from tool args.
+func TestParseAccountsToolArg(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		args     map[string]interface{}
+		expected []string
+	}{
+		{
+			name:     "missing_accounts",
+			args:     map[string]interface{}{},
+			expected: nil,
+		},
+		{
+			name: "empty_accounts",
+			args: map[string]interface{}{
+				"accounts": []interface{}{},
+			},
+			expected: nil,
+		},
+		{
+			name: "valid_accounts",
+			args: map[string]interface{}{
+				"accounts": []interface{}{"dev", "prod"},
+			},
+			expected: []string{"dev", "prod"},
+		},
+		{
+			name: "filters_empty_strings",
+			args: map[string]interface{}{
+				"accounts": []interface{}{"dev", "", "prod"},
+			},
+			expected: []string{"dev", "prod"},
+		},
+		{
+			name: "wrong_type",
+			args: map[string]interface{}{
+				"accounts": "not-an-array",
+			},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := parseAccountsToolArg(tt.args)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestIsCloudWatchConfigured tests the combined config check.
+func TestIsCloudWatchConfigured(t *testing.T) {
+	tests := []struct {
+		name             string
+		assumeRole       string
+		accounts         string
+		expectConfigured bool
+	}{
+		{
+			name:             "nothing_set",
+			assumeRole:       "",
+			accounts:         "",
+			expectConfigured: false,
+		},
+		{
+			name:             "legacy_role_only",
+			assumeRole:       "arn:aws:iam::123:role/test",
+			accounts:         "",
+			expectConfigured: true,
+		},
+		{
+			name:             "accounts_only",
+			assumeRole:       "",
+			accounts:         `{"dev":"arn:dev"}`,
+			expectConfigured: true,
+		},
+		{
+			name:             "both_set",
+			assumeRole:       "arn:aws:iam::123:role/test",
+			accounts:         `{"dev":"arn:dev"}`,
+			expectConfigured: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(envCloudWatchAssumeRole, tt.assumeRole)
+			t.Setenv(envCloudWatchAccounts, tt.accounts)
+
+			result := isCloudWatchConfigured()
+			assert.Equal(t, tt.expectConfigured, result)
+		})
+	}
+}
+
+// TestExecuteCloudWatchLogsListGroupsMultiAccount tests multi-account log group listing.
+func TestExecuteCloudWatchLogsListGroupsMultiAccount(t *testing.T) {
+	t.Setenv(envCloudWatchAccounts, `{"dev":"arn:dev","prod":"arn:prod"}`)
+	t.Setenv(envCloudWatchAssumeRole, "")
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	ctx := context.Background()
+
+	t.Run("results_labeled_per_account", func(t *testing.T) {
+		server := &Server{
+			logger: logger,
+			cloudWatchClientFactory: func(_ context.Context, _ string, roleARN string) (client CloudWatchLogsClient, err error) {
+				groupName := "/aws/lambda/dev-func"
+				if roleARN == "arn:prod" {
+					groupName = "/aws/lambda/prod-func"
+				}
+
+				client = &mockCloudWatchLogsClient{
+					describeLogGroupsFunc: func(_ context.Context, _ *cloudwatchlogs.DescribeLogGroupsInput, _ ...func(*cloudwatchlogs.Options)) (result *cloudwatchlogs.DescribeLogGroupsOutput, err error) {
+						result = &cloudwatchlogs.DescribeLogGroupsOutput{
+							LogGroups: []types.LogGroup{
+								{LogGroupName: aws.String(groupName), StoredBytes: aws.Int64(100)},
+							},
+						}
+						return result, err
+					},
+				}
+				return client, err
+			},
+		}
+
+		args := map[string]interface{}{}
+		result, err := server.executeCloudWatchLogsListGroups(ctx, args)
+
+		require.NoError(t, err)
+		assert.Contains(t, result, `"account": "dev"`)
+		assert.Contains(t, result, `"account": "prod"`)
+		assert.Contains(t, result, "/aws/lambda/dev-func")
+		assert.Contains(t, result, "/aws/lambda/prod-func")
+	})
+
+	t.Run("one_account_error_doesnt_block_others", func(t *testing.T) {
+		server := &Server{
+			logger: logger,
+			cloudWatchClientFactory: func(_ context.Context, _ string, roleARN string) (client CloudWatchLogsClient, err error) {
+				if roleARN == "arn:dev" {
+					err = errors.New("assume role failed for dev")
+					return client, err
+				}
+
+				client = &mockCloudWatchLogsClient{
+					describeLogGroupsFunc: func(_ context.Context, _ *cloudwatchlogs.DescribeLogGroupsInput, _ ...func(*cloudwatchlogs.Options)) (result *cloudwatchlogs.DescribeLogGroupsOutput, err error) {
+						result = &cloudwatchlogs.DescribeLogGroupsOutput{
+							LogGroups: []types.LogGroup{
+								{LogGroupName: aws.String("/aws/lambda/prod-func"), StoredBytes: aws.Int64(100)},
+							},
+						}
+						return result, err
+					},
+				}
+				return client, err
+			},
+		}
+
+		args := map[string]interface{}{}
+		result, err := server.executeCloudWatchLogsListGroups(ctx, args)
+
+		require.NoError(t, err)
+		assert.Contains(t, result, "assume role failed for dev")
+		assert.Contains(t, result, "/aws/lambda/prod-func")
+	})
+
+	t.Run("filter_by_account_name", func(t *testing.T) {
+		factoryCalled := make(map[string]bool)
+
+		server := &Server{
+			logger: logger,
+			cloudWatchClientFactory: func(_ context.Context, _ string, roleARN string) (client CloudWatchLogsClient, err error) {
+				factoryCalled[roleARN] = true
+
+				client = &mockCloudWatchLogsClient{
+					describeLogGroupsFunc: func(_ context.Context, _ *cloudwatchlogs.DescribeLogGroupsInput, _ ...func(*cloudwatchlogs.Options)) (result *cloudwatchlogs.DescribeLogGroupsOutput, err error) {
+						result = &cloudwatchlogs.DescribeLogGroupsOutput{
+							LogGroups: []types.LogGroup{
+								{LogGroupName: aws.String("/aws/lambda/prod-func"), StoredBytes: aws.Int64(100)},
+							},
+						}
+						return result, err
+					},
+				}
+				return client, err
+			},
+		}
+
+		args := map[string]interface{}{
+			"accounts": []interface{}{"prod"},
+		}
+		result, err := server.executeCloudWatchLogsListGroups(ctx, args)
+
+		require.NoError(t, err)
+		assert.True(t, factoryCalled["arn:prod"], "should have called factory for prod")
+		assert.False(t, factoryCalled["arn:dev"], "should not have called factory for dev")
+		assert.Contains(t, result, `"account": "prod"`)
+	})
+}
+
+// TestExecuteCloudWatchLogsQueryMultiAccount tests multi-account query execution.
+func TestExecuteCloudWatchLogsQueryMultiAccount(t *testing.T) {
+	t.Setenv(envCloudWatchAccounts, `{"dev":"arn:dev","prod":"arn:prod"}`)
+	t.Setenv(envCloudWatchAssumeRole, "")
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	ctx := context.Background()
+
+	server := &Server{
+		logger: logger,
+		cloudWatchClientFactory: func(_ context.Context, _ string, roleARN string) (client CloudWatchLogsClient, err error) {
+			msg := "dev log message"
+			if roleARN == "arn:prod" {
+				msg = "prod log message"
+			}
+
+			client = &mockCloudWatchLogsClient{
+				startQueryFunc: func(_ context.Context, _ *cloudwatchlogs.StartQueryInput, _ ...func(*cloudwatchlogs.Options)) (result *cloudwatchlogs.StartQueryOutput, err error) {
+					result = &cloudwatchlogs.StartQueryOutput{
+						QueryId: aws.String("qid-" + roleARN),
+					}
+					return result, err
+				},
+				getQueryResultsFunc: func(_ context.Context, _ *cloudwatchlogs.GetQueryResultsInput, _ ...func(*cloudwatchlogs.Options)) (result *cloudwatchlogs.GetQueryResultsOutput, err error) {
+					result = &cloudwatchlogs.GetQueryResultsOutput{
+						Status: types.QueryStatusComplete,
+						Results: [][]types.ResultField{
+							{{Field: aws.String("@message"), Value: aws.String(msg)}},
+						},
+					}
+					return result, err
+				},
+			}
+			return client, err
+		},
+	}
+
+	args := map[string]interface{}{
+		"query":      "fields @message",
+		"log_groups": []interface{}{"/test/group"},
+		"start_time": "1h",
+	}
+
+	result, err := server.executeCloudWatchLogsQuery(ctx, args)
+
+	require.NoError(t, err)
+	assert.Contains(t, result, `"account": "dev"`)
+	assert.Contains(t, result, `"account": "prod"`)
+	assert.Contains(t, result, "dev log message")
+	assert.Contains(t, result, "prod log message")
+}
+
+// TestExecuteCloudWatchLogsGetEventsMultiAccount tests multi-account event retrieval.
+func TestExecuteCloudWatchLogsGetEventsMultiAccount(t *testing.T) {
+	t.Setenv(envCloudWatchAccounts, `{"dev":"arn:dev","prod":"arn:prod"}`)
+	t.Setenv(envCloudWatchAssumeRole, "")
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	ctx := context.Background()
+
+	now := time.Now()
+
+	server := &Server{
+		logger: logger,
+		cloudWatchClientFactory: func(_ context.Context, _ string, roleARN string) (client CloudWatchLogsClient, err error) {
+			msg := "dev event"
+			if roleARN == "arn:prod" {
+				msg = "prod event"
+			}
+
+			client = &mockCloudWatchLogsClient{
+				getLogEventsFunc: func(_ context.Context, _ *cloudwatchlogs.GetLogEventsInput, _ ...func(*cloudwatchlogs.Options)) (result *cloudwatchlogs.GetLogEventsOutput, err error) {
+					result = &cloudwatchlogs.GetLogEventsOutput{
+						Events: []types.OutputLogEvent{
+							{Timestamp: aws.Int64(now.UnixMilli()), Message: aws.String(msg)},
+						},
+					}
+					return result, err
+				},
+			}
+			return client, err
+		},
+	}
+
+	args := map[string]interface{}{
+		"log_group":  "/test/group",
+		"log_stream": "stream-1",
+		"accounts":   []interface{}{"prod"},
+	}
+
+	result, err := server.executeCloudWatchLogsGetEvents(ctx, args)
+
+	require.NoError(t, err)
+	assert.Contains(t, result, `"account": "prod"`)
+	assert.Contains(t, result, "prod event")
+	assert.NotContains(t, result, "dev event")
+}
+
+// TestExecuteCloudWatchLogsQueryLegacy tests the legacy path when CLOUDWATCH_ACCOUNTS is unset.
+func TestExecuteCloudWatchLogsQueryLegacy(t *testing.T) {
+	// Ensure multi-account is NOT configured
+	t.Setenv(envCloudWatchAccounts, "")
+	t.Setenv(envCloudWatchAssumeRole, "")
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	ctx := context.Background()
+
+	server := &Server{
+		logger: logger,
+	}
+
+	// The legacy path tries to call createCloudWatchClient which will fail without AWS.
+	// We verify it goes down the legacy path by confirming it does NOT try multi-account resolution.
+	args := map[string]interface{}{
+		"query":      "fields @message",
+		"log_groups": []interface{}{"/test/group"},
+		"start_time": "1h",
+	}
+
+	// This will fail at createCloudWatchClient (no AWS), but the point is it
+	// doesn't fail at multi-account resolution.
+	_, err := server.executeCloudWatchLogsQuery(ctx, args)
+
+	// We expect an error from the AWS client creation, not from account resolution
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "unknown account")
 }
 
 // TestCloudWatchListLimitArg tests the list limit argument parsing.

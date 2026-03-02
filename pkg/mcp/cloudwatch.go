@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,9 +35,13 @@ const (
 	timeNow                     = "now"
 )
 
-// Environment variable for optional IAM role assumption.
+// Environment variable for optional IAM role assumption (legacy single-account).
 // If set, CloudWatch queries will assume this role instead of using the default credentials.
 const envCloudWatchAssumeRole = "CLOUDWATCH_ASSUME_ROLE"
+
+// Environment variable for multi-account CloudWatch access.
+// JSON map of friendly name to full role ARN, e.g. {"dev":"arn:...","prod":"arn:..."}.
+const envCloudWatchAccounts = "CLOUDWATCH_ACCOUNTS"
 
 // Environment variable for optional external ID when assuming cross-account roles.
 // Required when the target role's trust policy includes an external ID condition.
@@ -50,6 +55,16 @@ type CloudWatchLogsClient interface {
 	DescribeLogGroups(ctx context.Context, params *cloudwatchlogs.DescribeLogGroupsInput, optFns ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogGroupsOutput, error)
 	GetLogEvents(ctx context.Context, params *cloudwatchlogs.GetLogEventsInput, optFns ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.GetLogEventsOutput, error)
 }
+
+// CloudWatchAccountConfig holds the friendly name and role ARN for a CloudWatch account.
+type CloudWatchAccountConfig struct {
+	Name    string `json:"name"`
+	RoleARN string `json:"role_arn"`
+}
+
+// CloudWatchClientFactory creates a CloudWatch Logs client for a given region and role ARN.
+// This abstraction enables testing without real AWS calls.
+type CloudWatchClientFactory func(ctx context.Context, region string, roleARN string) (CloudWatchLogsClient, error)
 
 // CloudWatchQueryResult represents the result of a CloudWatch Logs Insights query.
 type CloudWatchQueryResult struct {
@@ -89,6 +104,62 @@ type CloudWatchLogEvent struct {
 	IngestionTime string `json:"ingestion_time,omitempty"`
 }
 
+// MultiAccountQueryResult wraps per-account CloudWatch Logs Insights query results.
+type MultiAccountQueryResult struct {
+	Accounts []AccountQueryResult `json:"accounts"`
+}
+
+// AccountQueryResult holds the query result (or error) for a single account.
+type AccountQueryResult struct {
+	Account string                 `json:"account"`
+	Error   string                 `json:"error,omitempty"`
+	Result  *CloudWatchQueryResult `json:"result,omitempty"`
+}
+
+// MultiAccountListGroupsResult wraps per-account log group listing results.
+type MultiAccountListGroupsResult struct {
+	Accounts []AccountListGroupsResult `json:"accounts"`
+}
+
+// AccountListGroupsResult holds the log groups (or error) for a single account.
+type AccountListGroupsResult struct {
+	Account   string               `json:"account"`
+	Region    string               `json:"region"`
+	Prefix    string               `json:"prefix,omitempty"`
+	Error     string               `json:"error,omitempty"`
+	Count     int                  `json:"count"`
+	LogGroups []CloudWatchLogGroup `json:"log_groups,omitempty"`
+}
+
+// MultiAccountGetEventsResult wraps per-account log event results.
+type MultiAccountGetEventsResult struct {
+	Accounts []AccountGetEventsResult `json:"accounts"`
+}
+
+// AccountGetEventsResult holds the log events (or error) for a single account.
+type AccountGetEventsResult struct {
+	Account   string               `json:"account"`
+	Region    string               `json:"region"`
+	LogGroup  string               `json:"log_group"`
+	LogStream string               `json:"log_stream"`
+	Error     string               `json:"error,omitempty"`
+	Count     int                  `json:"count"`
+	Events    []CloudWatchLogEvent `json:"events,omitempty"`
+}
+
+// cloudWatchAccountsProperty returns the shared "accounts" property for tool schemas.
+func cloudWatchAccountsProperty() (result map[string]interface{}) {
+	result = map[string]interface{}{
+		"type":        "array",
+		"description": "AWS accounts to query by name (e.g. 'dev','stage','prod'). Defaults to all configured accounts.",
+		"items": map[string]interface{}{
+			"type": "string",
+		},
+	}
+
+	return result
+}
+
 // getCloudWatchTools returns CloudWatch Logs tool definitions.
 func getCloudWatchTools() (result []MCPTool) {
 	result = []MCPTool{
@@ -125,6 +196,7 @@ func getCloudWatchTools() (result []MCPTool) {
 						"type":        "integer",
 						"description": "Maximum number of results to return (default: 100, max: 10000)",
 					},
+					"accounts": cloudWatchAccountsProperty(),
 				},
 				"required": []string{"query", "log_groups", "start_time"},
 			},
@@ -147,6 +219,7 @@ func getCloudWatchTools() (result []MCPTool) {
 						"type":        "integer",
 						"description": "Maximum number of log groups to return (default: 50)",
 					},
+					"accounts": cloudWatchAccountsProperty(),
 				},
 			},
 		},
@@ -180,6 +253,7 @@ func getCloudWatchTools() (result []MCPTool) {
 						"type":        "integer",
 						"description": "Maximum number of events to return (default: 100)",
 					},
+					"accounts": cloudWatchAccountsProperty(),
 				},
 				"required": []string{"log_group", "log_stream"},
 			},
@@ -187,6 +261,126 @@ func getCloudWatchTools() (result []MCPTool) {
 	}
 
 	return result
+}
+
+// isCloudWatchConfigured returns true if either multi-account or legacy CloudWatch config is present.
+func isCloudWatchConfigured() (configured bool) {
+	configured = os.Getenv(envCloudWatchAccounts) != "" || os.Getenv(envCloudWatchAssumeRole) != ""
+
+	return configured
+}
+
+// loadCloudWatchAccounts parses the CLOUDWATCH_ACCOUNTS env var into account configs.
+// Returns nil (not an error) if the env var is unset, allowing fallback to legacy mode.
+func loadCloudWatchAccounts() (accounts []CloudWatchAccountConfig, err error) {
+	raw := os.Getenv(envCloudWatchAccounts)
+	if raw == "" {
+		return accounts, err
+	}
+
+	var nameToARN map[string]string
+
+	err = json.Unmarshal([]byte(raw), &nameToARN)
+	if err != nil {
+		err = fmt.Errorf("parsing %s: %w", envCloudWatchAccounts, err)
+		return accounts, err
+	}
+
+	if len(nameToARN) == 0 {
+		err = fmt.Errorf("%s is set but contains no accounts", envCloudWatchAccounts)
+		return accounts, err
+	}
+
+	// Sort keys for deterministic ordering
+	names := make([]string, 0, len(nameToARN))
+	for name := range nameToARN {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	accounts = make([]CloudWatchAccountConfig, 0, len(names))
+
+	for _, name := range names {
+		accounts = append(accounts, CloudWatchAccountConfig{
+			Name:    name,
+			RoleARN: nameToARN[name],
+		})
+	}
+
+	return accounts, err
+}
+
+// resolveCloudWatchAccounts filters the full account list to only the requested names.
+// If requested is empty, all accounts are returned.
+func resolveCloudWatchAccounts(
+	all []CloudWatchAccountConfig,
+	requested []string,
+) (resolved []CloudWatchAccountConfig, err error) {
+	if len(requested) == 0 {
+		resolved = all
+		return resolved, err
+	}
+
+	byName := make(map[string]CloudWatchAccountConfig, len(all))
+	for _, acct := range all {
+		byName[acct.Name] = acct
+	}
+
+	for _, name := range requested {
+		acct, exists := byName[name]
+		if !exists {
+			validNames := make([]string, 0, len(all))
+			for _, a := range all {
+				validNames = append(validNames, a.Name)
+			}
+
+			err = fmt.Errorf("unknown account %q; valid accounts: %s", name, strings.Join(validNames, ", "))
+
+			return resolved, err
+		}
+
+		resolved = append(resolved, acct)
+	}
+
+	return resolved, err
+}
+
+// parseAccountsToolArg extracts the optional "accounts" string array from tool args.
+func parseAccountsToolArg(args map[string]interface{}) (accounts []string) {
+	raw, ok := args["accounts"].([]interface{})
+	if !ok {
+		return accounts
+	}
+
+	for _, item := range raw {
+		s, strOK := item.(string)
+		if strOK && s != "" {
+			accounts = append(accounts, s)
+		}
+	}
+
+	return accounts
+}
+
+// defaultCloudWatchClientFactory creates a real CloudWatch Logs client via assume-role.
+func defaultCloudWatchClientFactory(ctx context.Context, region string, roleARN string) (client CloudWatchLogsClient, err error) {
+	var cfg aws.Config
+
+	cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		err = fmt.Errorf("loading AWS config: %w", err)
+		return client, err
+	}
+
+	cfg, err = configureAssumeRole(ctx, cfg, roleARN, region)
+	if err != nil {
+		return client, err
+	}
+
+	client = cloudwatchlogs.NewFromConfig(cfg)
+
+	return client, err
 }
 
 // executeCloudWatchLogsQuery executes a CloudWatch Logs Insights query.
@@ -229,6 +423,19 @@ func (s *Server) executeCloudWatchLogsQuery(ctx context.Context, args map[string
 		return result, err
 	}
 
+	// Check for multi-account mode
+	var accounts []CloudWatchAccountConfig
+	accounts, err = loadCloudWatchAccounts()
+	if err != nil {
+		return result, err
+	}
+
+	if len(accounts) > 0 {
+		result, err = s.executeMultiAccountQuery(ctx, accounts, args, logGroups, query, startTime, endTime, limit, region)
+		return result, err
+	}
+
+	// Legacy single-account path
 	s.logger.InfoContext(ctx, "executing CloudWatch Logs Insights query",
 		"region", region,
 		"log_groups", logGroups,
@@ -263,12 +470,88 @@ func (s *Server) executeCloudWatchLogsQuery(ctx context.Context, args map[string
 	return result, err
 }
 
+// executeMultiAccountQuery runs a CloudWatch query across multiple accounts.
+func (s *Server) executeMultiAccountQuery(
+	ctx context.Context,
+	allAccounts []CloudWatchAccountConfig,
+	args map[string]interface{},
+	logGroups []string,
+	query string,
+	startTime time.Time,
+	endTime time.Time,
+	limit int,
+	region string,
+) (result string, err error) {
+	requested := parseAccountsToolArg(args)
+
+	var resolved []CloudWatchAccountConfig
+	resolved, err = resolveCloudWatchAccounts(allAccounts, requested)
+	if err != nil {
+		return result, err
+	}
+
+	s.logger.InfoContext(ctx, "executing multi-account CloudWatch Logs Insights query",
+		"region", region,
+		"accounts", len(resolved),
+		"log_groups", logGroups,
+		"query", query)
+
+	multiResult := MultiAccountQueryResult{
+		Accounts: make([]AccountQueryResult, 0, len(resolved)),
+	}
+
+	for _, acct := range resolved {
+		acctResult := AccountQueryResult{Account: acct.Name}
+
+		client, clientErr := s.cloudWatchClientFactory(ctx, region, acct.RoleARN)
+		if clientErr != nil {
+			acctResult.Error = clientErr.Error()
+			multiResult.Accounts = append(multiResult.Accounts, acctResult)
+
+			continue
+		}
+
+		queryResult, queryErr := runCloudWatchQuery(ctx, client, logGroups, query, startTime, endTime, limit, region)
+		if queryErr != nil {
+			acctResult.Error = queryErr.Error()
+		} else {
+			acctResult.Result = &queryResult
+		}
+
+		multiResult.Accounts = append(multiResult.Accounts, acctResult)
+	}
+
+	var resultBytes []byte
+	resultBytes, err = json.MarshalIndent(multiResult, "", "  ")
+	if err != nil {
+		err = fmt.Errorf("formatting multi-account query result: %w", err)
+		return result, err
+	}
+
+	result = string(resultBytes)
+
+	return result, err
+}
+
 // executeCloudWatchLogsListGroups lists CloudWatch log groups.
 func (s *Server) executeCloudWatchLogsListGroups(ctx context.Context, args map[string]interface{}) (result string, err error) {
 	region := parseCloudWatchRegionArg(args)
 	prefix, _ := args["prefix"].(string)
 	limit := parseCloudWatchListLimitArg(args)
 
+	// Check for multi-account mode
+	var accounts []CloudWatchAccountConfig
+	accounts, err = loadCloudWatchAccounts()
+	if err != nil {
+		return result, err
+	}
+
+	if len(accounts) > 0 {
+		result, err = s.executeMultiAccountListGroups(ctx, accounts, args, prefix, limit, region)
+		return result, err
+	}
+
+	// Legacy single-account path
 	s.logger.InfoContext(ctx, "listing CloudWatch log groups",
 		"region", region,
 		"prefix", prefix,
@@ -312,6 +595,70 @@ func (s *Server) executeCloudWatchLogsListGroups(ctx context.Context, args map[s
 	return result, err
 }
 
+// executeMultiAccountListGroups lists log groups across multiple accounts.
+func (s *Server) executeMultiAccountListGroups(
+	ctx context.Context,
+	allAccounts []CloudWatchAccountConfig,
+	args map[string]interface{},
+	prefix string,
+	limit int,
+	region string,
+) (result string, err error) {
+	requested := parseAccountsToolArg(args)
+
+	var resolved []CloudWatchAccountConfig
+	resolved, err = resolveCloudWatchAccounts(allAccounts, requested)
+	if err != nil {
+		return result, err
+	}
+
+	s.logger.InfoContext(ctx, "listing CloudWatch log groups across accounts",
+		"region", region,
+		"accounts", len(resolved),
+		"prefix", prefix)
+
+	multiResult := MultiAccountListGroupsResult{
+		Accounts: make([]AccountListGroupsResult, 0, len(resolved)),
+	}
+
+	for _, acct := range resolved {
+		acctResult := AccountListGroupsResult{
+			Account: acct.Name,
+			Region:  region,
+			Prefix:  prefix,
+		}
+
+		client, clientErr := s.cloudWatchClientFactory(ctx, region, acct.RoleARN)
+		if clientErr != nil {
+			acctResult.Error = clientErr.Error()
+			multiResult.Accounts = append(multiResult.Accounts, acctResult)
+
+			continue
+		}
+
+		logGroups, listErr := listLogGroups(ctx, client, prefix, limit)
+		if listErr != nil {
+			acctResult.Error = listErr.Error()
+		} else {
+			acctResult.Count = len(logGroups)
+			acctResult.LogGroups = logGroups
+		}
+
+		multiResult.Accounts = append(multiResult.Accounts, acctResult)
+	}
+
+	var resultBytes []byte
+	resultBytes, err = json.MarshalIndent(multiResult, "", "  ")
+	if err != nil {
+		err = fmt.Errorf("formatting multi-account log groups: %w", err)
+		return result, err
+	}
+
+	result = string(resultBytes)
+
+	return result, err
+}
+
 // executeCloudWatchLogsGetEvents gets log events from a specific log stream.
 func (s *Server) executeCloudWatchLogsGetEvents(ctx context.Context, args map[string]interface{}) (result string, err error) {
 	logGroup, _ := args["log_group"].(string)
@@ -352,6 +699,19 @@ func (s *Server) executeCloudWatchLogsGetEvents(ctx context.Context, args map[st
 		endTime = &parsed
 	}
 
+	// Check for multi-account mode
+	var accounts []CloudWatchAccountConfig
+	accounts, err = loadCloudWatchAccounts()
+	if err != nil {
+		return result, err
+	}
+
+	if len(accounts) > 0 {
+		result, err = s.executeMultiAccountGetEvents(ctx, accounts, args, logGroup, logStream, startTime, endTime, limit, region)
+		return result, err
+	}
+
+	// Legacy single-account path
 	s.logger.InfoContext(ctx, "getting CloudWatch log events",
 		"region", region,
 		"log_group", logGroup,
@@ -395,6 +755,75 @@ func (s *Server) executeCloudWatchLogsGetEvents(ctx context.Context, args map[st
 	}
 
 	result = string(resultBytes)
+	return result, err
+}
+
+// executeMultiAccountGetEvents gets log events across multiple accounts.
+func (s *Server) executeMultiAccountGetEvents(
+	ctx context.Context,
+	allAccounts []CloudWatchAccountConfig,
+	args map[string]interface{},
+	logGroup string,
+	logStream string,
+	startTime *time.Time,
+	endTime *time.Time,
+	limit int,
+	region string,
+) (result string, err error) {
+	requested := parseAccountsToolArg(args)
+
+	var resolved []CloudWatchAccountConfig
+	resolved, err = resolveCloudWatchAccounts(allAccounts, requested)
+	if err != nil {
+		return result, err
+	}
+
+	s.logger.InfoContext(ctx, "getting CloudWatch log events across accounts",
+		"region", region,
+		"accounts", len(resolved),
+		"log_group", logGroup,
+		"log_stream", logStream)
+
+	multiResult := MultiAccountGetEventsResult{
+		Accounts: make([]AccountGetEventsResult, 0, len(resolved)),
+	}
+
+	for _, acct := range resolved {
+		acctResult := AccountGetEventsResult{
+			Account:   acct.Name,
+			Region:    region,
+			LogGroup:  logGroup,
+			LogStream: logStream,
+		}
+
+		client, clientErr := s.cloudWatchClientFactory(ctx, region, acct.RoleARN)
+		if clientErr != nil {
+			acctResult.Error = clientErr.Error()
+			multiResult.Accounts = append(multiResult.Accounts, acctResult)
+
+			continue
+		}
+
+		events, eventsErr := getLogEvents(ctx, client, logGroup, logStream, startTime, endTime, limit)
+		if eventsErr != nil {
+			acctResult.Error = eventsErr.Error()
+		} else {
+			acctResult.Count = len(events)
+			acctResult.Events = events
+		}
+
+		multiResult.Accounts = append(multiResult.Accounts, acctResult)
+	}
+
+	var resultBytes []byte
+	resultBytes, err = json.MarshalIndent(multiResult, "", "  ")
+	if err != nil {
+		err = fmt.Errorf("formatting multi-account log events: %w", err)
+		return result, err
+	}
+
+	result = string(resultBytes)
+
 	return result, err
 }
 

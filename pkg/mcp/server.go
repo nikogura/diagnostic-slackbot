@@ -47,14 +47,15 @@ const (
 
 // Server implements the MCP (Model Context Protocol) server.
 type Server struct {
-	lokiClient        *k8s.LokiClient
-	githubClient      *github.Client
-	dbClients         map[string]*DatabaseClient
-	grafanaClient     *GrafanaClient
-	graphqlClients    map[string]*GraphQLClient
-	prometheusClients map[string]*PrometheusClient
-	logger            *slog.Logger
-	companyName       string
+	lokiClient              *k8s.LokiClient
+	githubClient            *github.Client
+	dbClients               map[string]*DatabaseClient
+	grafanaClient           *GrafanaClient
+	graphqlClients          map[string]*GraphQLClient
+	prometheusClients       map[string]*PrometheusClient
+	cloudWatchClientFactory CloudWatchClientFactory
+	logger                  *slog.Logger
+	companyName             string
 }
 
 // NewServer creates a new MCP server.
@@ -124,14 +125,15 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 	}
 
 	result = &Server{
-		lokiClient:        lokiClient,
-		githubClient:      githubClient,
-		dbClients:         dbClients,
-		grafanaClient:     grafanaClient,
-		graphqlClients:    graphqlClients,
-		prometheusClients: prometheusClients,
-		logger:            logger,
-		companyName:       companyName,
+		lokiClient:              lokiClient,
+		githubClient:            githubClient,
+		dbClients:               dbClients,
+		grafanaClient:           grafanaClient,
+		graphqlClients:          graphqlClients,
+		prometheusClients:       prometheusClients,
+		cloudWatchClientFactory: defaultCloudWatchClientFactory,
+		logger:                  logger,
+		companyName:             companyName,
 	}
 
 	return result
@@ -727,7 +729,7 @@ func (s *Server) getToolDefinitions() (result []MCPTool) {
 		result = append(result, getGrafanaTools()...)
 	}
 
-	if os.Getenv("CLOUDWATCH_ASSUME_ROLE") != "" {
+	if isCloudWatchConfigured() {
 		result = append(result, getCloudWatchTools()...)
 	}
 

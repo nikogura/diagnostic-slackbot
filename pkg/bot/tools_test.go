@@ -15,6 +15,7 @@ func clearToolEnvVars(t *testing.T) {
 	for _, key := range []string{
 		"LOKI_ENDPOINT",
 		"CLOUDWATCH_ASSUME_ROLE",
+		"CLOUDWATCH_ACCOUNTS",
 		"PROMETHEUS_URL",
 		"GRAFANA_URL",
 		"GRAFANA_API_KEY",
@@ -33,7 +34,7 @@ func TestNewToolConfigNoEnvVars(t *testing.T) {
 	config := NewToolConfig()
 
 	assert.False(t, config.LokiAvailable, "Loki should not be available without LOKI_ENDPOINT")
-	assert.False(t, config.CloudWatchAvailable, "CloudWatch should not be available without CLOUDWATCH_ASSUME_ROLE")
+	assert.False(t, config.CloudWatchAvailable, "CloudWatch should not be available without CLOUDWATCH_ASSUME_ROLE or CLOUDWATCH_ACCOUNTS")
 	assert.False(t, config.PrometheusAvailable, "Prometheus should not be available without PROMETHEUS_URL")
 	assert.False(t, config.GrafanaAvailable, "Grafana should not be available without GRAFANA_URL+GRAFANA_API_KEY")
 	assert.False(t, config.GitHubAvailable, "GitHub should not be available without GITHUB_TOKEN")
@@ -58,6 +59,16 @@ func TestNewToolConfigWithCloudWatch(t *testing.T) {
 	config := NewToolConfig()
 
 	assert.True(t, config.CloudWatchAvailable, "CloudWatch should be available with CLOUDWATCH_ASSUME_ROLE set")
+	assert.False(t, config.LokiAvailable, "Loki should not be available")
+}
+
+func TestNewToolConfigWithCloudWatchAccounts(t *testing.T) {
+	clearToolEnvVars(t)
+	t.Setenv("CLOUDWATCH_ACCOUNTS", `{"dev":"arn:aws:iam::111111111111:role/dev","prod":"arn:aws:iam::222222222222:role/prod"}`)
+
+	config := NewToolConfig()
+
+	assert.True(t, config.CloudWatchAvailable, "CloudWatch should be available with CLOUDWATCH_ACCOUNTS set")
 	assert.False(t, config.LokiAvailable, "Loki should not be available")
 }
 

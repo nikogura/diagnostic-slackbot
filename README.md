@@ -219,19 +219,21 @@ Your investigation prompt should reference these MCP tool names that Claude can 
   Parameters: query, start, end (optional), limit (optional)
   ```
 
-**CloudWatch Logs** — requires `CLOUDWATCH_ASSUME_ROLE`:
+**CloudWatch Logs** — requires `CLOUDWATCH_ACCOUNTS` or `CLOUDWATCH_ASSUME_ROLE`:
 - `cloudwatch_logs_query` — Execute CloudWatch Logs Insights queries across log groups
   ```
-  Parameters: query, log_groups, start_time, end_time (optional), region (optional), limit (optional)
+  Parameters: query, log_groups, start_time, end_time (optional), region (optional), limit (optional), accounts (optional)
   ```
 - `cloudwatch_logs_list_groups` — List available CloudWatch log groups
   ```
-  Parameters: prefix (optional), region (optional), limit (optional)
+  Parameters: prefix (optional), region (optional), limit (optional), accounts (optional)
   ```
 - `cloudwatch_logs_get_events` — Get log events from a specific log stream
   ```
-  Parameters: log_group, log_stream, start_time (optional), end_time (optional), limit (optional)
+  Parameters: log_group, log_stream, start_time (optional), end_time (optional), limit (optional), accounts (optional)
   ```
+
+When `CLOUDWATCH_ACCOUNTS` is configured with multiple accounts, the `accounts` parameter filters which accounts to query. If omitted, all configured accounts are queried and results are labeled per account.
 
 **Prometheus/Metrics** — requires `PROMETHEUS_URL` or `PROMETHEUS_<NAME>_URL`:
 - `prometheus_query` — Execute an instant PromQL query
@@ -448,7 +450,7 @@ The bot uses Claude Code CLI with a custom MCP (Model Context Protocol) server t
 | Category | Env Var Required | Tools |
 |----------|-----------------|-------|
 | Loki (Logging) | `LOKI_ENDPOINT` | `query_loki` |
-| CloudWatch Logs | `CLOUDWATCH_ASSUME_ROLE` | `cloudwatch_logs_query`, `cloudwatch_logs_list_groups`, `cloudwatch_logs_get_events` |
+| CloudWatch Logs | `CLOUDWATCH_ACCOUNTS` or `CLOUDWATCH_ASSUME_ROLE` | `cloudwatch_logs_query`, `cloudwatch_logs_list_groups`, `cloudwatch_logs_get_events` |
 | Prometheus | `PROMETHEUS_URL` or `PROMETHEUS_<NAME>_URL` | `prometheus_query`, `prometheus_query_range`, `prometheus_series`, `prometheus_label_values`, `prometheus_list_endpoints` |
 | Grafana | `GRAFANA_URL` + `GRAFANA_API_KEY` | `grafana_list_dashboards`, `grafana_get_dashboard`, `grafana_create_dashboard`, `grafana_update_dashboard`, `grafana_delete_dashboard` |
 | Database | `DATABASE_URL` or `DATABASE_<NAME>_URL` | `database_query`, `database_list` |
@@ -500,8 +502,9 @@ The bot is configured via environment variables:
 
 **Tool Backing Services** (each enables a set of MCP tools — see [Tool Categories](#tool-categories)):
 - `LOKI_ENDPOINT` - Loki gateway endpoint (enables `query_loki`)
-- `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for CloudWatch queries (enables CloudWatch tools)
-- `CLOUDWATCH_EXTERNAL_ID` - External ID for cross-account role assumption (optional, only used with `CLOUDWATCH_ASSUME_ROLE`)
+- `CLOUDWATCH_ACCOUNTS` - JSON map of friendly name to full IAM role ARN for multi-account CloudWatch access (enables CloudWatch tools). Example: `{"dev":"arn:aws:iam::111:role/dev-reader","prod":"arn:aws:iam::222:role/prod-reader"}`
+- `CLOUDWATCH_ASSUME_ROLE` - IAM role ARN to assume for single-account CloudWatch queries (legacy, enables CloudWatch tools). Use `CLOUDWATCH_ACCOUNTS` for multi-account support.
+- `CLOUDWATCH_EXTERNAL_ID` - External ID for cross-account role assumption (optional, used with both `CLOUDWATCH_ACCOUNTS` and `CLOUDWATCH_ASSUME_ROLE`)
 - `PROMETHEUS_URL` - Prometheus endpoint (enables Prometheus tools). Multiple endpoints: use `PROMETHEUS_<NAME>_URL` pattern
 - `GRAFANA_URL` - Grafana instance URL (requires `GRAFANA_API_KEY`)
 - `GRAFANA_API_KEY` - Grafana API key (required with `GRAFANA_URL`, enables Grafana tools)

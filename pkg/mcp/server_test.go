@@ -93,6 +93,7 @@ func TestGetToolDefinitionsMinimalServer(t *testing.T) {
 
 	// Clear env vars that affect tool registration
 	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("CLOUDWATCH_ACCOUNTS", "")
 	t.Setenv("AWS_REGION", "")
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
@@ -129,6 +130,7 @@ func TestGetToolDefinitionsWithGitHub(t *testing.T) {
 
 	// Clear env vars
 	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("CLOUDWATCH_ACCOUNTS", "")
 	t.Setenv("AWS_REGION", "")
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
@@ -154,6 +156,7 @@ func TestGetToolDefinitionsWithCloudWatch(t *testing.T) {
 	}))
 
 	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "arn:aws:iam::123456789012:role/test")
+	t.Setenv("CLOUDWATCH_ACCOUNTS", "")
 	t.Setenv("AWS_REGION", "")
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
@@ -172,12 +175,39 @@ func TestGetToolDefinitionsWithCloudWatch(t *testing.T) {
 	require.True(t, toolMap["cloudwatch_logs_get_events"], "CloudWatch get events should be present")
 }
 
+func TestGetToolDefinitionsWithCloudWatchAccounts(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+
+	// Set multi-account config, no legacy role
+	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("CLOUDWATCH_ACCOUNTS", `{"dev":"arn:aws:iam::111111111111:role/dev-role","prod":"arn:aws:iam::222222222222:role/prod-role"}`)
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+
+	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
+	server := NewServer(lokiClient, "", logger)
+
+	tools := server.getToolDefinitions()
+
+	toolMap := make(map[string]bool)
+	for _, tool := range tools {
+		toolMap[tool.Name] = true
+	}
+
+	require.True(t, toolMap["cloudwatch_logs_query"], "CloudWatch query should be present with CLOUDWATCH_ACCOUNTS")
+	require.True(t, toolMap["cloudwatch_logs_list_groups"], "CloudWatch list groups should be present")
+	require.True(t, toolMap["cloudwatch_logs_get_events"], "CloudWatch get events should be present")
+}
+
 func TestGetToolDefinitionsWithoutCloudWatch(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelError,
 	}))
 
 	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("CLOUDWATCH_ACCOUNTS", "")
 	t.Setenv("AWS_REGION", "")
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
@@ -201,6 +231,7 @@ func TestGetToolDefinitionsWithECR(t *testing.T) {
 
 	t.Setenv("AWS_REGION", "us-east-1")
 	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("CLOUDWATCH_ACCOUNTS", "")
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
 	server := NewServer(lokiClient, "", logger)
@@ -222,6 +253,7 @@ func TestGetToolDefinitionsUtilityToolsAlwaysPresent(t *testing.T) {
 
 	// Clear everything
 	t.Setenv("CLOUDWATCH_ASSUME_ROLE", "")
+	t.Setenv("CLOUDWATCH_ACCOUNTS", "")
 	t.Setenv("AWS_REGION", "")
 	t.Setenv("AWS_DEFAULT_REGION", "")
 

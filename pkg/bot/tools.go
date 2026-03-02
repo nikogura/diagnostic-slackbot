@@ -22,7 +22,7 @@ type ToolConfig struct {
 func NewToolConfig() (config ToolConfig) {
 	config = ToolConfig{
 		LokiAvailable:       os.Getenv("LOKI_ENDPOINT") != "",
-		CloudWatchAvailable: os.Getenv("CLOUDWATCH_ASSUME_ROLE") != "",
+		CloudWatchAvailable: os.Getenv("CLOUDWATCH_ASSUME_ROLE") != "" || os.Getenv("CLOUDWATCH_ACCOUNTS") != "",
 		PrometheusAvailable: hasPrometheusConfig(),
 		GrafanaAvailable:    os.Getenv("GRAFANA_URL") != "" && os.Getenv("GRAFANA_API_KEY") != "",
 		GitHubAvailable:     os.Getenv("GITHUB_TOKEN") != "",
