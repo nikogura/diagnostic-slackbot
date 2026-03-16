@@ -651,6 +651,10 @@ func getGrafanaCreateDashboardTool() (tool MCPTool) {
 						"required":   []string{"title", "panelType"},
 					},
 				},
+				"folderUid": map[string]interface{}{
+					"type":        "string",
+					"description": "Folder UID to create the dashboard in. If omitted, creates in the General folder.",
+				},
 			},
 			"required": []string{"title", "panels"},
 		},
@@ -678,6 +682,10 @@ func getGrafanaModifyTools() (result []MCPTool) {
 					"message": map[string]interface{}{
 						"type":        "string",
 						"description": "Update message/reason",
+					},
+					"folderUid": map[string]interface{}{
+						"type":        "string",
+						"description": "Target folder UID. If omitted, the dashboard stays in its current folder.",
 					},
 				},
 				"required": []string{"uid", "dashboard"},
@@ -1269,15 +1277,20 @@ func (s *Server) executeGrafanaGetDashboard(ctx context.Context, args map[string
 		return result, err
 	}
 
-	var dashboard *Dashboard
-	dashboard, err = s.grafanaClient.GetDashboard(ctx, uid)
+	var resp *DashboardGetResponse
+	resp, err = s.grafanaClient.GetDashboard(ctx, uid)
 	if err != nil {
 		return result, err
 	}
 
-	// Format the result as JSON
+	// Format the result as JSON, including folder metadata
+	output := map[string]interface{}{
+		"dashboard": resp.Dashboard,
+		"folderUid": resp.FolderUID,
+	}
+
 	var resultBytes []byte
-	resultBytes, err = json.MarshalIndent(dashboard, "", "  ")
+	resultBytes, err = json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		err = fmt.Errorf("formatting dashboard: %w", err)
 		return result, err
@@ -1408,9 +1421,11 @@ func (s *Server) executeGrafanaCreateDashboard(ctx context.Context, args map[str
 		return result, err
 	}
 
+	folderUID, _ := args["folderUid"].(string)
+
 	// Create the dashboard with multi-datasource support
 	var uid string
-	uid, err = s.grafanaClient.CreateDashboardFromQueries(ctx, title, panels)
+	uid, err = s.grafanaClient.CreateDashboardFromQueries(ctx, title, panels, folderUID)
 	if err != nil {
 		return result, err
 	}
@@ -1444,6 +1459,19 @@ func (s *Server) executeGrafanaUpdateDashboard(ctx context.Context, args map[str
 		message = "Updated via MCP"
 	}
 
+	// Determine target folder: use explicit folderUid if provided,
+	// otherwise fetch the existing dashboard's folder to preserve placement.
+	folderUID, _ := args["folderUid"].(string)
+	if folderUID == "" {
+		var existing *DashboardGetResponse
+		existing, err = s.grafanaClient.GetDashboard(ctx, uid)
+		if err != nil {
+			err = fmt.Errorf("fetching existing dashboard to preserve folder: %w", err)
+			return result, err
+		}
+		folderUID = existing.FolderUID
+	}
+
 	// Convert the dashboard map to Dashboard struct
 	var dashboardBytes []byte
 	dashboardBytes, err = json.Marshal(dashboardRaw)
@@ -1461,7 +1489,7 @@ func (s *Server) executeGrafanaUpdateDashboard(ctx context.Context, args map[str
 
 	dashboard.UID = uid
 
-	err = s.grafanaClient.UpdateDashboard(ctx, &dashboard, message)
+	err = s.grafanaClient.UpdateDashboard(ctx, &dashboard, folderUID, message)
 	if err != nil {
 		return result, err
 	}

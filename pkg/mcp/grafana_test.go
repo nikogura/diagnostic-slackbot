@@ -166,7 +166,8 @@ func TestGrafanaClientGetDashboard(t *testing.T) {
 				},
 				"meta": {
 					"version": 1,
-					"slug": "test-dashboard"
+					"slug": "test-dashboard",
+					"folderUid": "test-folder"
 				}
 			}`,
 			serverStatus:  http.StatusOK,
@@ -198,15 +199,16 @@ func TestGrafanaClientGetDashboard(t *testing.T) {
 			client, err := NewGrafanaClient(server.URL, "test-api-key", logger)
 			require.NoError(t, err)
 
-			dashboard, err := client.GetDashboard(ctx, tt.uid)
+			resp, err := client.GetDashboard(ctx, tt.uid)
 
 			if tt.expectErr {
 				require.Error(t, err)
-				assert.Nil(t, dashboard)
+				assert.Nil(t, resp)
 			} else {
 				require.NoError(t, err)
-				require.NotNil(t, dashboard)
-				assert.Equal(t, tt.expectedTitle, dashboard.Title)
+				require.NotNil(t, resp)
+				assert.Equal(t, tt.expectedTitle, resp.Dashboard.Title)
+				assert.Equal(t, "test-folder", resp.FolderUID)
 			}
 		})
 	}
@@ -288,6 +290,85 @@ func TestGrafanaClientCreateDashboard(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.expectedUID, uid)
+			}
+		})
+	}
+}
+
+func TestGrafanaClientUpdateDashboard(t *testing.T) {
+	// Cannot run in parallel due to shared resources
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	ctx := context.Background()
+
+	dashboard := &Dashboard{
+		UID:   "test-uid",
+		Title: "Updated Dashboard",
+		Panels: []Panel{
+			{ID: 1, Type: "stat", Title: "Panel 1"},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		folderUID      string
+		serverStatus   int
+		serverResponse string
+		expectErr      bool
+	}{
+		{
+			name:           "successful_update_preserves_folder",
+			folderUID:      "wiz-folder-uid",
+			serverStatus:   http.StatusOK,
+			serverResponse: `{"id": 1, "uid": "test-uid", "status": "success", "version": 2}`,
+			expectErr:      false,
+		},
+		{
+			name:           "successful_update_empty_folder",
+			folderUID:      "",
+			serverStatus:   http.StatusOK,
+			serverResponse: `{"id": 1, "uid": "test-uid", "status": "success", "version": 2}`,
+			expectErr:      false,
+		},
+		{
+			name:           "server_error",
+			folderUID:      "wiz-folder-uid",
+			serverStatus:   http.StatusInternalServerError,
+			serverResponse: `{"message": "Internal error"}`,
+			expectErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Cannot run in parallel due to shared resources
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/api/dashboards/db", r.URL.Path)
+				assert.Equal(t, http.MethodPost, r.Method)
+
+				// Verify request body includes folderUid
+				var req DashboardSaveRequest
+				err := json.NewDecoder(r.Body).Decode(&req)
+				assert.NoError(t, err)
+				assert.Equal(t, dashboard.Title, req.Dashboard.Title)
+				assert.True(t, req.Overwrite)
+				assert.Equal(t, tt.folderUID, req.FolderUID)
+
+				w.WriteHeader(tt.serverStatus)
+				_, _ = w.Write([]byte(tt.serverResponse))
+			}))
+			t.Cleanup(server.Close)
+
+			client, err := NewGrafanaClient(server.URL, "test-api-key", logger)
+			require.NoError(t, err)
+
+			err = client.UpdateDashboard(ctx, dashboard, tt.folderUID, "Test update")
+
+			if tt.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -513,7 +594,7 @@ func TestGrafanaClientCreateDashboardFromQueries(t *testing.T) {
 	client, err := NewGrafanaClient(server.URL, "test-api-key", logger)
 	require.NoError(t, err)
 
-	uid, err := client.CreateDashboardFromQueries(ctx, "Multi-Datasource Dashboard", queries)
+	uid, err := client.CreateDashboardFromQueries(ctx, "Multi-Datasource Dashboard", queries, "")
 	require.NoError(t, err)
 	assert.Equal(t, "multi-datasource-uid", uid)
 }
@@ -687,7 +768,7 @@ func TestCreateDashboardFromQueriesInfinity(t *testing.T) {
 	client, err := NewGrafanaClient(server.URL, "test-api-key", logger)
 	require.NoError(t, err)
 
-	uid, err := client.CreateDashboardFromQueries(ctx, "Infinity Dashboard", queries)
+	uid, err := client.CreateDashboardFromQueries(ctx, "Infinity Dashboard", queries, "")
 	require.NoError(t, err)
 	assert.Equal(t, "infinity-dash-uid", uid)
 }

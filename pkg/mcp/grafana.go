@@ -111,6 +111,12 @@ type InfinityColumn struct {
 	Type     string `json:"type"` // "string", "number", "timestamp", "timestamp_epoch"
 }
 
+// DashboardGetResponse wraps a dashboard with metadata from the Grafana API response.
+type DashboardGetResponse struct {
+	Dashboard *Dashboard
+	FolderUID string
+}
+
 // DashboardSaveRequest represents the request to save a dashboard.
 type DashboardSaveRequest struct {
 	Dashboard Dashboard `json:"dashboard"`
@@ -230,33 +236,39 @@ func (c *GrafanaClient) ListDashboards(ctx context.Context) (dashboards []Dashbo
 	return dashboards, err
 }
 
-// GetDashboard retrieves a dashboard by UID.
-func (c *GrafanaClient) GetDashboard(ctx context.Context, uid string) (dashboard *Dashboard, err error) {
+// GetDashboard retrieves a dashboard by UID, including folder metadata.
+func (c *GrafanaClient) GetDashboard(ctx context.Context, uid string) (result *DashboardGetResponse, err error) {
 	endpoint := fmt.Sprintf("/api/dashboards/uid/%s", uid)
+
 	var responseBody []byte
 	responseBody, err = c.makeRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		err = fmt.Errorf("getting dashboard %s: %w", uid, err)
-		return dashboard, err
+		return result, err
 	}
 
 	var response struct {
 		Dashboard Dashboard `json:"dashboard"`
 		Meta      struct {
-			Version int    `json:"version"`
-			Slug    string `json:"slug"`
+			Version   int    `json:"version"`
+			Slug      string `json:"slug"`
+			FolderUID string `json:"folderUid"`
 		} `json:"meta"`
 	}
 
 	err = json.Unmarshal(responseBody, &response)
 	if err != nil {
 		err = fmt.Errorf("unmarshaling dashboard: %w", err)
-		return dashboard, err
+		return result, err
 	}
 
-	dashboard = &response.Dashboard
-	c.logger.InfoContext(ctx, "retrieved dashboard", "uid", uid, "title", dashboard.Title)
-	return dashboard, err
+	result = &DashboardGetResponse{
+		Dashboard: &response.Dashboard,
+		FolderUID: response.Meta.FolderUID,
+	}
+
+	c.logger.InfoContext(ctx, "retrieved dashboard", "uid", uid, "title", result.Dashboard.Title, "folderUid", result.FolderUID)
+	return result, err
 }
 
 // CreateDashboard creates a new dashboard.
@@ -303,12 +315,13 @@ func (c *GrafanaClient) CreateDashboard(ctx context.Context, dashboard *Dashboar
 	return uid, err
 }
 
-// UpdateDashboard updates an existing dashboard.
-func (c *GrafanaClient) UpdateDashboard(ctx context.Context, dashboard *Dashboard, message string) (err error) {
+// UpdateDashboard updates an existing dashboard, preserving its folder placement.
+func (c *GrafanaClient) UpdateDashboard(ctx context.Context, dashboard *Dashboard, folderUID string, message string) (err error) {
 	request := DashboardSaveRequest{
 		Dashboard: *dashboard,
 		Message:   message,
 		Overwrite: true,
+		FolderUID: folderUID,
 	}
 
 	_, err = c.makeRequest(ctx, http.MethodPost, "/api/dashboards/db", request)
@@ -320,6 +333,7 @@ func (c *GrafanaClient) UpdateDashboard(ctx context.Context, dashboard *Dashboar
 	c.logger.InfoContext(ctx, "updated dashboard",
 		"uid", dashboard.UID,
 		"title", dashboard.Title,
+		"folderUid", folderUID,
 	)
 	return err
 }
@@ -477,7 +491,7 @@ func (c *GrafanaClient) buildInfinityTarget(target *Target, queryConfig PanelQue
 
 // CreateDashboardFromQueries creates a dashboard with panels based on any type of queries.
 // Supports SQL (PostgreSQL/MySQL), Prometheus (PromQL), CloudWatch, and Infinity queries.
-func (c *GrafanaClient) CreateDashboardFromQueries(ctx context.Context, title string, queries []PanelQueryConfig) (uid string, err error) {
+func (c *GrafanaClient) CreateDashboardFromQueries(ctx context.Context, title string, queries []PanelQueryConfig, folderUID string) (uid string, err error) {
 	dashboard := &Dashboard{
 		Title:    title,
 		Tags:     []string{"auto-generated", "mcp"},
@@ -525,7 +539,7 @@ func (c *GrafanaClient) CreateDashboardFromQueries(ctx context.Context, title st
 		dashboard.Panels = append(dashboard.Panels, panel)
 	}
 
-	uid, err = c.CreateDashboard(ctx, dashboard, "", fmt.Sprintf("Auto-generated dashboard: %s", title))
+	uid, err = c.CreateDashboard(ctx, dashboard, folderUID, fmt.Sprintf("Auto-generated dashboard: %s", title))
 	return uid, err
 }
 
