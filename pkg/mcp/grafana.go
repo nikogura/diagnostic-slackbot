@@ -480,8 +480,8 @@ func (c *GrafanaClient) buildInfinityTarget(target *Target, queryConfig PanelQue
 		urlOptions.Body = queryConfig.InfinityBody
 		urlOptions.BodyType = "raw"
 
-		// Default content type for GraphQL
-		if urlOptions.BodyContentType == "" && target.InfinityType == "graphql" {
+		// Default content type to application/json when a body is present
+		if urlOptions.BodyContentType == "" {
 			urlOptions.BodyContentType = "application/json"
 		}
 	}

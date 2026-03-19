@@ -664,6 +664,73 @@ func TestBuildPanelTargetInfinityGraphQL(t *testing.T) {
 	assert.Equal(t, "string", target.Columns[0].Type)
 }
 
+func TestBuildPanelTargetInfinityJSONWithBody(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	client, err := NewGrafanaClient("http://grafana.example.com", "test-key", logger)
+	require.NoError(t, err)
+
+	// This is the pattern used by Wiz vulnerability dashboards: json type with a POST body
+	// containing a GraphQL query string. The body_content_type must be set to application/json
+	// or the upstream API returns 400 Bad Request.
+	body := `{"query": "query { vulnerabilityFindings(filterBy: { severity: [CRITICAL], projectId: [\"proj-id\"] }, first: 0) { totalCount } }"}`
+	queryConfig := PanelQueryConfig{
+		DatasourceType:       "yesoreyeram-infinity-datasource",
+		DatasourceUID:        "wiz-infinity",
+		InfinityQueryType:    "json",
+		InfinityMethod:       "POST",
+		InfinityBody:         body,
+		InfinityURL:          "https://api.us20.app.wiz.io/graphql",
+		InfinityRootSelector: "data.vulnerabilityFindings",
+		InfinityColumns: []InfinityColumn{
+			{Selector: "totalCount", Text: "Count", Type: "number"},
+		},
+	}
+
+	target := client.buildPanelTarget(queryConfig)
+
+	// JSON type with body must set body_content_type to application/json
+	assert.Equal(t, "json", target.InfinityType)
+	require.NotNil(t, target.URLOptions)
+	assert.Equal(t, "POST", target.URLOptions.Method, "explicit POST should be respected")
+	assert.Equal(t, "application/json", target.URLOptions.BodyContentType, "JSON type with body should default to application/json")
+	assert.Equal(t, body, target.URLOptions.Body)
+	assert.Equal(t, "raw", target.URLOptions.BodyType)
+	assert.Equal(t, "https://api.us20.app.wiz.io/graphql", target.URL)
+	assert.Equal(t, "data.vulnerabilityFindings", target.RootSelector)
+	require.Len(t, target.Columns, 1)
+	assert.Equal(t, "totalCount", target.Columns[0].Selector)
+}
+
+func TestBuildPanelTargetInfinityBodyContentTypeNotOverridden(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	client, err := NewGrafanaClient("http://grafana.example.com", "test-key", logger)
+	require.NoError(t, err)
+
+	// When an explicit InfinityMethod of POST is used with a body and a custom content type
+	// could be set in the future, the default should still apply correctly.
+	// This test verifies that csv type with a body also gets application/json default.
+	body := `some,csv,data`
+	queryConfig := PanelQueryConfig{
+		DatasourceType:    "yesoreyeram-infinity-datasource",
+		DatasourceUID:     "csv-ds",
+		InfinityQueryType: "csv",
+		InfinityMethod:    "POST",
+		InfinityBody:      body,
+	}
+
+	target := client.buildPanelTarget(queryConfig)
+
+	require.NotNil(t, target.URLOptions)
+	assert.Equal(t, "POST", target.URLOptions.Method)
+	assert.Equal(t, body, target.URLOptions.Body)
+	assert.Equal(t, "raw", target.URLOptions.BodyType)
+	assert.Equal(t, "application/json", target.URLOptions.BodyContentType, "any type with body should default to application/json")
+}
+
 func TestBuildPanelTargetInfinity(t *testing.T) {
 	t.Parallel()
 
