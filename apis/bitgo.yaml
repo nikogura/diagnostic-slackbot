@@ -1,0 +1,170 @@
+name: bitgo
+description: "BitGo custodial wallet API — read-only access to wallets, transfers, and pending approvals"
+base_url: https://app.bitgo.com
+auth:
+  type: bearer
+  token_env: BITGO_ACCESS_TOKEN
+headers:
+  User-Agent: "diagnostic-slackbot/1.0"
+rate_limit:
+  max_concurrent: 5
+  retry_on_429: true
+  max_retries: 3
+defaults:
+  limit: 25
+  max_limit: 100
+endpoints:
+  - name: list_enterprises
+    description: "List all enterprises accessible to the configured token"
+    method: GET
+    path: /api/v2/enterprise
+    params: []
+
+  - name: list_wallets
+    description: "List wallets with optional filters by enterprise, coin, type, or label"
+    method: GET
+    path: /api/v2/wallets
+    params:
+      - name: enterprise
+        type: string
+        description: "Filter by enterprise ID"
+        required: false
+      - name: coin
+        type: string
+        description: "Filter by coin type (e.g., btc, eth)"
+        required: false
+      - name: type
+        type: string
+        description: "Filter by wallet type"
+        required: false
+      - name: label
+        type: string
+        description: "Filter by wallet label"
+        required: false
+    redact_fields: [email, phone, ipAddress]
+
+  - name: get_wallet
+    description: "Get detailed information about a specific wallet"
+    method: GET
+    path: /api/v2/wallet/{wallet_id}
+    params:
+      - name: wallet_id
+        type: string
+        description: "BitGo wallet ID (24+ hex characters)"
+        required: true
+        in: path
+        validate: "[a-f0-9]{24,}"
+    redact_fields: [email, phone, ipAddress]
+
+  - name: get_wallet_balance
+    description: "Get balance information for wallets of a specific coin type"
+    method: GET
+    path: /api/v2/{coin}/wallet/balances
+    params:
+      - name: coin
+        type: string
+        description: "Coin type (e.g., btc, eth, ofcusd)"
+        required: true
+        in: path
+        validate: "[a-z0-9:]{2,20}"
+
+  - name: list_wallet_addresses
+    description: "List receive addresses for a wallet"
+    method: GET
+    path: /api/v2/{coin}/wallet/{wallet_id}/addresses
+    params:
+      - name: coin
+        type: string
+        description: "Coin type"
+        required: true
+        in: path
+        validate: "[a-z0-9:]{2,20}"
+      - name: wallet_id
+        type: string
+        description: "BitGo wallet ID"
+        required: true
+        in: path
+        validate: "[a-f0-9]{24,}"
+
+  - name: list_wallet_transfers
+    description: "List transfers (send/receive) for a wallet with optional filters"
+    method: GET
+    path: /api/v2/{coin}/wallet/{wallet_id}/transfer
+    params:
+      - name: coin
+        type: string
+        description: "Coin type"
+        required: true
+        in: path
+        validate: "[a-z0-9:]{2,20}"
+      - name: wallet_id
+        type: string
+        description: "BitGo wallet ID"
+        required: true
+        in: path
+        validate: "[a-f0-9]{24,}"
+      - name: state
+        type: string
+        description: "Filter by transfer state"
+        required: false
+      - name: type
+        type: string
+        description: "Filter by transfer type (send, receive)"
+        required: false
+    redact_fields: [email, phone, ipAddress]
+
+  - name: get_transfer
+    description: "Get details of a specific transfer by ID"
+    method: GET
+    path: /api/v2/{coin}/wallet/{wallet_id}/transfer/{transfer_id}
+    params:
+      - name: coin
+        type: string
+        description: "Coin type"
+        required: true
+        in: path
+        validate: "[a-z0-9:]{2,20}"
+      - name: wallet_id
+        type: string
+        description: "BitGo wallet ID"
+        required: true
+        in: path
+        validate: "[a-f0-9]{24,}"
+      - name: transfer_id
+        type: string
+        description: "BitGo transfer ID"
+        required: true
+        in: path
+        validate: "[a-f0-9]{24,}"
+    redact_fields: [email, phone, ipAddress]
+
+  - name: list_enterprise_transfers
+    description: "List transfers across an entire enterprise"
+    method: GET
+    path: /api/v2/enterprise/{enterprise_id}/transfer
+    params:
+      - name: enterprise_id
+        type: string
+        description: "BitGo enterprise ID"
+        required: true
+        in: path
+        validate: "[a-f0-9]{24,}"
+    redact_fields: [email, phone, ipAddress]
+
+  - name: list_pending_approvals
+    description: "List all pending multi-sig approvals"
+    method: GET
+    path: /api/v2/pendingApprovals
+    params: []
+
+  - name: get_pending_approval
+    description: "Get details of a specific pending approval"
+    method: GET
+    path: /api/v2/pendingapprovals/{approval_id}
+    params:
+      - name: approval_id
+        type: string
+        description: "BitGo pending approval ID"
+        required: true
+        in: path
+        validate: "[a-f0-9]{24,}"

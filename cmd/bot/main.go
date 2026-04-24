@@ -177,7 +177,7 @@ func startMCPHTTPServer(ctx context.Context, githubToken string, logger *slog.Lo
 	}
 
 	lokiClient := k8s.NewLokiClient(lokiEndpoint, logger)
-	mcpServer := mcp.NewServer(lokiClient, githubToken, logger)
+	mcpServer := mcp.NewServer(lokiClient, githubToken, nil, logger)
 
 	// Build authentication chain from environment variables
 	authChain := buildAuthChain(logger)

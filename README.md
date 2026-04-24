@@ -6,6 +6,7 @@ A Slack bot that enables self-service production diagnostics by integrating Clau
 
 - **Claude Code Integration**: Uses Claude Code CLI with MCP server for advanced tool use capabilities
 - **MCP Server**: Custom tools for Loki queries, K8s access, GitHub integration, ECR scanning, and PDF generation
+- **Third-Party API Integration**: Configuration-driven system for adding read-only API integrations via YAML — no Go code required
 - **Investigation Skills**: YAML-based templates define structured investigation workflows
 - **Kubernetes Access**: Read-only access to pods, logs, ConfigMaps, Deployments, and Flux CRDs
 - **PDF Report Generation**: Automated professional reports with company branding via Pandoc + LaTeX
@@ -47,6 +48,12 @@ diagnostic-slackbot/
 │   │   ├── agent.go                 # K8s resource access
 │   │   ├── loki.go                  # Loki log query client
 │   │   └── sanitizer.go             # Log sanitization
+│   ├── apiconfig/                   # Third-party API integration framework
+│   │   ├── config.go                # YAML config schema and loader
+│   │   ├── client.go                # Generic HTTP client (auth, retry, rate limiting)
+│   │   ├── validate.go              # Path parameter validation (traversal, injection)
+│   │   ├── redact.go                # PII field redaction from JSON responses
+│   │   └── tools.go                 # MCP tool generation and dispatch
 │   ├── mcp/                         # MCP server implementation
 │   │   ├── server.go                # MCP protocol, tool registration, and handlers
 │   │   ├── types.go                 # MCP protocol types
@@ -60,6 +67,8 @@ diagnostic-slackbot/
 │   └── metrics/                     # Prometheus metrics
 │       ├── metrics.go               # Metric definitions
 │       └── server.go                # HTTP metrics server
+├── apis/                            # Third-party API configs (YAML)
+│   └── bitgo.yaml                   # Example: BitGo read-only wallet API
 ├── investigations/                  # YAML investigation skills
 │   ├── modsecurity-block.yaml
 │   ├── atlas-migration.yaml
@@ -261,6 +270,11 @@ When `CLOUDWATCH_ACCOUNTS` is configured with multiple accounts, the `accounts` 
 **ECR (Container Security)** — requires `AWS_REGION` or `AWS_DEFAULT_REGION`:
 - `ecr_scan_results` — Query ECR for container image vulnerability scan results
 
+**Third-Party APIs** — dynamically loaded from `apis/` directory YAML configs:
+- Tools are named `{api_name}_{endpoint_name}` (e.g., `bitgo_list_wallets`)
+- Only available when the API's auth token env var is set
+- See [Third-Party API Integration](#third-party-api-integration) for details
+
 **Utilities** — always available:
 - `whois_lookup` — IP geolocation, ISP, ASN lookup
 - `generate_pdf` — Generate a PDF report from Markdown content (auto-uploaded to Slack)
@@ -456,6 +470,7 @@ The bot uses Claude Code CLI with a custom MCP (Model Context Protocol) server t
 | Database | `DATABASE_URL` or `DATABASE_<NAME>_URL` | `database_query`, `database_list` |
 | GitHub | `GITHUB_TOKEN` | `github_get_file`, `github_list_directory`, `github_search_code` |
 | ECR | `AWS_REGION` or `AWS_DEFAULT_REGION` | `ecr_scan_results` |
+| Third-Party APIs | Per-API token env var (e.g., `BITGO_ACCESS_TOKEN`) | Dynamically generated from YAML configs in `apis/` directory |
 | Utilities | *(always available)* | `whois_lookup`, `generate_pdf` |
 
 See `pkg/bot/tools.go` for the env var detection logic and `pkg/mcp/server.go` for conditional tool registration.
@@ -512,6 +527,102 @@ The bot is configured via environment variables:
 - `GITHUB_TOKEN` - Personal access token for GitHub tools
 - `AWS_REGION` or `AWS_DEFAULT_REGION` - AWS region (enables ECR tools)
 - `AWS_*` - Standard AWS credentials for ECR vulnerability scanning
+- `API_CONFIG_DIR` - Directory containing third-party API YAML configs (default: `./apis`)
+
+## Third-Party API Integration
+
+The bot supports adding read-only API integrations via YAML configuration files — no Go code required. Drop a YAML file in the `apis/` directory, set the auth token env var, and the MCP server automatically registers the endpoints as tools that Claude can call.
+
+### How It Works
+
+1. On startup, the MCP server loads all `.yaml` files from `API_CONFIG_DIR` (default `./apis/`)
+2. Each config defines an API with endpoints, parameters, auth, and rate limiting
+3. Endpoints become MCP tools named `{api_name}_{endpoint_name}` (e.g., `bitgo_list_wallets`)
+4. If the auth token env var is not set, that API's tools are silently skipped
+5. Claude can call these tools during investigations just like built-in tools
+
+### API Config YAML Structure
+
+```yaml
+name: myapi                              # API name (used as tool name prefix)
+description: "My API description"
+base_url: https://api.example.com
+auth:
+  type: bearer                           # "bearer", "header", or "none"
+  token_env: MY_API_TOKEN                # env var containing the auth token
+headers:                                 # optional custom headers
+  User-Agent: "diagnostic-slackbot/1.0"
+rate_limit:
+  max_concurrent: 5                      # semaphore size (default: 5)
+  retry_on_429: true                     # honor Retry-After header (default: true)
+  max_retries: 3                         # max 429 retries (default: 3)
+defaults:
+  limit: 25                              # default pagination limit
+  max_limit: 100                         # server-enforced max limit
+endpoints:
+  - name: list_items                     # becomes tool "myapi_list_items"
+    description: "List all items"
+    method: GET
+    path: /api/v1/items
+    params:
+      - name: status
+        type: string
+        description: "Filter by status"
+        required: false
+    redact_fields: [email, phone]        # PII fields to redact from responses
+
+  - name: get_item
+    description: "Get item by ID"
+    method: GET
+    path: /api/v1/items/{item_id}        # path parameters use {placeholder} syntax
+    params:
+      - name: item_id
+        type: string
+        description: "Item ID"
+        required: true
+        in: path                         # "path" or "query" (default: "query")
+        validate: "[a-f0-9]{24,}"        # regex validation pattern
+    redact_fields: [email, phone, ssn]
+```
+
+### Security Features
+
+- **Read-only**: Only GET requests are supported
+- **Path traversal protection**: All path parameters are validated against `../` and `\..` patterns
+- **Query injection protection**: Path parameters are blocked from containing `?`, `&`, `#`
+- **Regex validation**: Per-parameter regex patterns reject invalid input before any HTTP request
+- **PII redaction**: Configurable field-level redaction walks nested JSON and replaces sensitive values with `[redacted]`
+- **Rate limiting**: Semaphore-based concurrency control prevents Claude's fan-out from overwhelming APIs
+- **429 retry**: Honors `Retry-After` headers with exponential backoff (capped at 30s)
+- **Response size cap**: Responses limited to 5MB
+- **Graceful degradation**: Missing auth token means tools are hidden, not erroring
+
+### Adding a New API
+
+1. Create a YAML file in `apis/` (e.g., `apis/fireblocks.yaml`)
+2. Set the auth token env var in your deployment (e.g., `FIREBLOCKS_API_TOKEN`)
+3. Deploy — tools appear automatically in Claude's tool list
+
+No PRs to the core repo needed. Investigation skills can reference the new tools immediately.
+
+### Included Example: BitGo
+
+The `apis/bitgo.yaml` config provides read-only access to BitGo custodial wallet APIs:
+
+| Tool | Description |
+|------|-------------|
+| `bitgo_list_enterprises` | List accessible enterprises |
+| `bitgo_list_wallets` | List wallets with filters |
+| `bitgo_get_wallet` | Get wallet details |
+| `bitgo_get_wallet_balance` | Get balances for a coin |
+| `bitgo_list_wallet_addresses` | List receive addresses |
+| `bitgo_list_wallet_transfers` | List transfers with filters |
+| `bitgo_get_transfer` | Get transfer details |
+| `bitgo_list_enterprise_transfers` | Enterprise-wide transfers |
+| `bitgo_list_pending_approvals` | List pending multi-sig approvals |
+| `bitgo_get_pending_approval` | Get pending approval details |
+
+Requires `BITGO_ACCESS_TOKEN` env var. All endpoints redact email, phone, and IP address fields.
 
 ## Building
 

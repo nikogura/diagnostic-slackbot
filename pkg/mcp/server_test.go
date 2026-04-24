@@ -99,7 +99,7 @@ func TestGetToolDefinitionsMinimalServer(t *testing.T) {
 
 	// Server with only Loki client, no other services
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	tools := server.getToolDefinitions()
 
@@ -135,7 +135,7 @@ func TestGetToolDefinitionsWithGitHub(t *testing.T) {
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "test-token", logger)
+	server := NewServer(lokiClient, "test-token", nil, logger)
 
 	tools := server.getToolDefinitions()
 
@@ -161,7 +161,7 @@ func TestGetToolDefinitionsWithCloudWatch(t *testing.T) {
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	tools := server.getToolDefinitions()
 
@@ -187,7 +187,7 @@ func TestGetToolDefinitionsWithCloudWatchAccounts(t *testing.T) {
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	tools := server.getToolDefinitions()
 
@@ -212,7 +212,7 @@ func TestGetToolDefinitionsWithoutCloudWatch(t *testing.T) {
 	t.Setenv("AWS_DEFAULT_REGION", "")
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	tools := server.getToolDefinitions()
 
@@ -234,7 +234,7 @@ func TestGetToolDefinitionsWithECR(t *testing.T) {
 	t.Setenv("CLOUDWATCH_ACCOUNTS", "")
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	tools := server.getToolDefinitions()
 
@@ -282,7 +282,7 @@ func TestExecuteGitHubGetFileWithoutToken(t *testing.T) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger) // Empty GitHub token
+	server := NewServer(lokiClient, "", nil, logger) // Empty GitHub token
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -315,7 +315,7 @@ func TestExecuteGitHubListDirectoryWithoutToken(t *testing.T) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -348,7 +348,7 @@ func TestExecuteGitHubSearchCodeWithoutToken(t *testing.T) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -379,7 +379,7 @@ func TestNewServerWithGitHubToken(t *testing.T) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "test-token", logger)
+	server := NewServer(lokiClient, "test-token", nil, logger)
 
 	require.NotNil(t, server, "NewServer() returned nil")
 	require.NotNil(t, server.githubClient, "NewServer() with GitHub token should initialize githubClient")
@@ -394,7 +394,7 @@ func TestNewServerWithoutGitHubToken(t *testing.T) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	server := NewServer(lokiClient, "", logger)
+	server := NewServer(lokiClient, "", nil, logger)
 
 	require.NotNil(t, server, "NewServer() returned nil")
 	require.Nil(t, server.githubClient, "NewServer() without GitHub token should not initialize githubClient")

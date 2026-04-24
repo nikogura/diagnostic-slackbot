@@ -29,7 +29,7 @@ func newTestHTTPServer(t *testing.T) (httpServer *HTTPServer) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	mcpServer := NewServer(lokiClient, "", logger)
+	mcpServer := NewServer(lokiClient, "", nil, logger)
 	httpServer = NewHTTPServer(mcpServer, ":0", nil, logger)
 
 	return httpServer
@@ -152,7 +152,7 @@ func TestHandleAuth(t *testing.T) {
 			}))
 
 			lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-			mcpServer := NewServer(lokiClient, "", logger)
+			mcpServer := NewServer(lokiClient, "", nil, logger)
 
 			// Build auth chain from token
 			var authChain *auth.Chain
@@ -658,7 +658,7 @@ func TestGetServerInfo(t *testing.T) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	mcpServer := NewServer(lokiClient, "", logger)
+	mcpServer := NewServer(lokiClient, "", nil, logger)
 
 	info := mcpServer.getServerInfo()
 
@@ -1098,7 +1098,7 @@ func TestHTTPServerRunHTTP(t *testing.T) {
 	}))
 
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	mcpServer := NewServer(lokiClient, "", logger)
+	mcpServer := NewServer(lokiClient, "", nil, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -1218,7 +1218,7 @@ func TestEventBufferFull(t *testing.T) {
 func BenchmarkHandleMessage(b *testing.B) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	mcpServer := NewServer(lokiClient, "", logger)
+	mcpServer := NewServer(lokiClient, "", nil, logger)
 	httpServer := NewHTTPServer(mcpServer, ":0", nil, logger)
 
 	sess := &session{
@@ -1252,7 +1252,7 @@ func BenchmarkHandleMessage(b *testing.B) {
 func BenchmarkProcessRequest(b *testing.B) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	lokiClient := k8s.NewLokiClient("http://dummy:3100", logger)
-	mcpServer := NewServer(lokiClient, "", logger)
+	mcpServer := NewServer(lokiClient, "", nil, logger)
 	httpServer := NewHTTPServer(mcpServer, ":0", nil, logger)
 
 	req := MCPRequest{

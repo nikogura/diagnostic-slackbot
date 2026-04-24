@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/nikogura/diagnostic-slackbot/pkg/apiconfig"
 	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
 	"github.com/nikogura/diagnostic-slackbot/pkg/mcp"
 )
@@ -29,8 +30,11 @@ func main() {
 	// Initialize clients
 	lokiClient := k8s.NewLokiClient(lokiEndpoint, logger)
 
+	// Load third-party API configs
+	apiToolRegistry := buildAPIToolRegistry(logger)
+
 	// Create MCP server
-	server := mcp.NewServer(lokiClient, githubToken, logger)
+	server := mcp.NewServer(lokiClient, githubToken, apiToolRegistry, logger)
 
 	// Run server (stdio transport)
 	ctx := context.Background()
@@ -40,4 +44,30 @@ func main() {
 		logger.Error("MCP server error", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
+}
+
+func buildAPIToolRegistry(logger *slog.Logger) (registry *apiconfig.APIToolRegistry) {
+	apiDir := os.Getenv("API_CONFIG_DIR")
+	if apiDir == "" {
+		apiDir = "./apis"
+	}
+
+	configs, err := apiconfig.LoadConfigs(apiDir, logger)
+	if err != nil {
+		logger.Warn("Failed to load API configs",
+			slog.String("error", err.Error()))
+		return registry
+	}
+
+	if len(configs) == 0 {
+		logger.Info("No third-party API configs loaded")
+		return registry
+	}
+
+	registry = apiconfig.NewAPIToolRegistry(configs, logger)
+
+	logger.Info("Third-party API tool registry initialized",
+		slog.Int("api_count", len(configs)))
+
+	return registry
 }

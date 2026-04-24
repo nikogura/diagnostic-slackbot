@@ -3,6 +3,8 @@ package bot
 import (
 	"os"
 	"strings"
+
+	"github.com/nikogura/diagnostic-slackbot/pkg/apiconfig"
 )
 
 // ToolConfig captures which tool categories are available based on environment configuration.
@@ -15,6 +17,7 @@ type ToolConfig struct {
 	GitHubAvailable     bool
 	DatabaseAvailable   bool
 	ECRAvailable        bool
+	APIToolRegistry     *apiconfig.APIToolRegistry
 }
 
 // NewToolConfig checks environment variables to determine which tool categories
@@ -64,6 +67,11 @@ func (tc ToolConfig) WriteToolUsage(builder *strings.Builder) {
 
 	if tc.ECRAvailable {
 		writeECRToolUsage(builder)
+	}
+
+	// Third-party API tools
+	if tc.APIToolRegistry != nil && tc.APIToolRegistry.HasTools() {
+		tc.APIToolRegistry.WriteToolUsage(builder)
 	}
 
 	// Utility tools are always available

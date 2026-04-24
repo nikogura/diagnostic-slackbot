@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v57/github"
+	"github.com/nikogura/diagnostic-slackbot/pkg/apiconfig"
 	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
 	"golang.org/x/oauth2"
 )
@@ -54,12 +55,13 @@ type Server struct {
 	graphqlClients          map[string]*GraphQLClient
 	prometheusClients       map[string]*PrometheusClient
 	cloudWatchClientFactory CloudWatchClientFactory
+	apiToolRegistry         *apiconfig.APIToolRegistry
 	logger                  *slog.Logger
 	companyName             string
 }
 
 // NewServer creates a new MCP server.
-func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logger) (result *Server) {
+func NewServer(lokiClient *k8s.LokiClient, githubToken string, apiToolRegistry *apiconfig.APIToolRegistry, logger *slog.Logger) (result *Server) {
 	var githubClient *github.Client
 	var grafanaClient *GrafanaClient
 
@@ -132,6 +134,7 @@ func NewServer(lokiClient *k8s.LokiClient, githubToken string, logger *slog.Logg
 		graphqlClients:          graphqlClients,
 		prometheusClients:       prometheusClients,
 		cloudWatchClientFactory: defaultCloudWatchClientFactory,
+		apiToolRegistry:         apiToolRegistry,
 		logger:                  logger,
 		companyName:             companyName,
 	}
@@ -749,6 +752,17 @@ func (s *Server) getToolDefinitions() (result []MCPTool) {
 		result = append(result, getGraphQLTools()...)
 	}
 
+	// Add dynamically loaded third-party API tools
+	if s.apiToolRegistry != nil && s.apiToolRegistry.HasTools() {
+		for _, tool := range s.apiToolRegistry.GetToolDefinitions() {
+			result = append(result, MCPTool{
+				Name:        tool.Name,
+				Description: tool.Description,
+				InputSchema: tool.InputSchema,
+			})
+		}
+	}
+
 	return result
 }
 
@@ -853,6 +867,14 @@ func (s *Server) dispatchExtendedToolCall(ctx context.Context, toolName string, 
 	case toolGraphQLListEndpoints:
 		result, err = s.executeGraphQLListEndpoints(ctx, args)
 	default:
+		// Try dynamically loaded API tools
+		if s.apiToolRegistry != nil {
+			var handled bool
+			result, handled, err = s.apiToolRegistry.DispatchToolCall(ctx, toolName, args)
+			if handled {
+				return result, err
+			}
+		}
 		err = fmt.Errorf("unknown tool: %s", toolName)
 	}
 
