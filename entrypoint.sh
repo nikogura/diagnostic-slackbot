@@ -13,7 +13,7 @@ echo "MCP config copied to /home/bot/.claude/mcp.json"
 # Using HTTP/SSE transport for better performance (persistent connection, no process spawning)
 cd /app
 echo "Registering MCP HTTP/SSE server with Claude Code..."
-claude mcp add --transport sse diagnostic http://localhost:8090/sse
+claude mcp add --transport sse diagnostic http://localhost:8090/sse 2>/dev/null || true
 
 echo "MCP HTTP/SSE server registered (server starts with main binary)"
 
