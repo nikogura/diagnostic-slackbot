@@ -145,6 +145,16 @@ linters:
 
   # All settings can be found here https://github.com/golangci/golangci-lint/blob/HEAD/.golangci.reference.yml
   settings:
+    goconst:
+      # Minimum string length to flag.
+      # Default: 3
+      # Raised because JSON schema construction repeats short structural keys
+      # ("type", "query", "items", "end", "limit", etc.) throughout tool definitions.
+      min-len: 15
+      # Minimum occurrences before flagging.
+      # Default: 3
+      min-occurrences: 4
+
     cyclop:
       # The maximal code complexity to report.
       # Default: 10

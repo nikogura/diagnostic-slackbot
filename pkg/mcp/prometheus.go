@@ -549,7 +549,7 @@ func getPrometheusQueryRangeTool() (result MCPTool) {
 				},
 				"end": map[string]interface{}{
 					"type":        "string",
-					"description": "End time as 'now' or RFC3339 timestamp (optional, defaults to now)",
+					"description": descEndTime,
 				},
 				"step": map[string]interface{}{
 					"type":        "string",

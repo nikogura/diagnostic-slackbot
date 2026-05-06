@@ -182,7 +182,7 @@ func (a *OIDCAuth) Authenticate(r *http.Request) (result *Result, err error) {
 		return result, err
 	}
 
-	a.logger.Info("OIDC token validated successfully",
+	a.logger.InfoContext(r.Context(), "OIDC token validated successfully",
 		slog.String("subject", result.Subject),
 		slog.String("username", result.Username),
 		slog.String("email", result.Email),

@@ -186,7 +186,7 @@ func getCloudWatchTools() (result []MCPTool) {
 					},
 					"end_time": map[string]interface{}{
 						"type":        "string",
-						"description": "End time as 'now' or RFC3339 timestamp (optional, defaults to now)",
+						"description": descEndTime,
 					},
 					"region": map[string]interface{}{
 						"type":        "string",
@@ -243,7 +243,7 @@ func getCloudWatchTools() (result []MCPTool) {
 					},
 					"end_time": map[string]interface{}{
 						"type":        "string",
-						"description": "End time as 'now' or RFC3339 timestamp (optional, defaults to now)",
+						"description": descEndTime,
 					},
 					"region": map[string]interface{}{
 						"type":        "string",

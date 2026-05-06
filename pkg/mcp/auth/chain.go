@@ -38,14 +38,14 @@ func (c *Chain) Authenticate(r *http.Request) (result *Result, err error) {
 	for _, method := range c.methods {
 		result, err = method.Authenticate(r)
 		if err == nil {
-			c.logger.Debug("Authentication succeeded",
+			c.logger.DebugContext(r.Context(), "Authentication succeeded",
 				slog.String("method", method.Name()),
 				slog.String("username", result.Username))
 			//nolint:nilerr // err is nil here, which is correct for successful auth
 			return result, err
 		}
 		lastErr = err
-		c.logger.Debug("Authentication failed",
+		c.logger.DebugContext(r.Context(), "Authentication failed",
 			slog.String("method", method.Name()),
 			slog.String("error", err.Error()))
 	}

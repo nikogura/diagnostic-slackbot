@@ -26,6 +26,12 @@ const (
 	methodToolsCall  = "tools/call"
 )
 
+// Common schema description strings.
+const (
+	descEndTime               = "End time as 'now' or RFC3339 timestamp (optional, defaults to now)"
+	grafanaInfinityDatasource = "yesoreyeram-infinity-datasource"
+)
+
 // Tool name constants.
 const (
 	toolQueryLoki              = "query_loki"
@@ -248,7 +254,7 @@ func getLokiTools() (result []MCPTool) {
 					},
 					"end": map[string]interface{}{
 						"type":        "string",
-						"description": "End time as 'now' or RFC3339 timestamp (optional, defaults to now)",
+						"description": descEndTime,
 					},
 					"limit": map[string]interface{}{
 						"type":        "integer",
@@ -529,7 +535,7 @@ func getPanelSchemaProperties() (result map[string]interface{}) {
 		"datasourceType": map[string]interface{}{
 			"type":        "string",
 			"description": "Type of datasource (postgres, mysql, prometheus, cloudwatch, yesoreyeram-infinity-datasource)",
-			"enum":        []string{"postgres", "mysql", "prometheus", "cloudwatch", "yesoreyeram-infinity-datasource"},
+			"enum":        []string{"postgres", "mysql", "prometheus", "cloudwatch", grafanaInfinityDatasource},
 			"default":     "postgres",
 		},
 		"datasourceUID": map[string]interface{}{

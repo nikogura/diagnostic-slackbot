@@ -382,7 +382,7 @@ func (c *GrafanaClient) buildPanelTarget(queryConfig PanelQueryConfig) (target T
 	case "cloudwatch":
 		c.buildCloudWatchTarget(&target, queryConfig)
 
-	case "yesoreyeram-infinity-datasource":
+	case grafanaInfinityDatasource:
 		c.buildInfinityTarget(&target, queryConfig)
 
 	default:
