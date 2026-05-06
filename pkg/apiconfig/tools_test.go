@@ -73,7 +73,7 @@ func TestAPIToolRegistry_DispatchToolCall(t *testing.T) {
 		{
 			Name:    "myapi",
 			BaseURL: server.URL,
-			Auth:    AuthConfig{Type: "bearer", TokenEnv: "DISPATCH_TOKEN"},
+			Auth:    AuthConfig{Type: AuthTypeBearer, TokenEnv: "DISPATCH_TOKEN"},
 			Endpoints: []Endpoint{
 				{Name: "list", Method: "GET", Path: "/items"},
 			},

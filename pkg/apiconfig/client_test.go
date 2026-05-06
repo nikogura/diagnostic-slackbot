@@ -26,7 +26,7 @@ func TestAPIClient_SuccessPath(t *testing.T) {
 	config := &APIConfig{
 		Name:    "test",
 		BaseURL: server.URL,
-		Auth:    AuthConfig{Type: "bearer", TokenEnv: "TEST_TOKEN"},
+		Auth:    AuthConfig{Type: AuthTypeBearer, TokenEnv: "TEST_TOKEN"},
 		Endpoints: []Endpoint{
 			{Name: "list", Method: "GET", Path: "/wallets"},
 		},
@@ -68,7 +68,7 @@ func TestAPIClient_429Retry(t *testing.T) {
 	config := &APIConfig{
 		Name:    "retrytest",
 		BaseURL: server.URL,
-		Auth:    AuthConfig{Type: "bearer", TokenEnv: "RETRY_TOKEN"},
+		Auth:    AuthConfig{Type: AuthTypeBearer, TokenEnv: "RETRY_TOKEN"},
 		Endpoints: []Endpoint{
 			{Name: "get", Method: "GET", Path: "/data"},
 		},
@@ -106,7 +106,7 @@ func TestAPIClient_429ExhaustedRetries(t *testing.T) {
 	config := &APIConfig{
 		Name:    "exhausttest",
 		BaseURL: server.URL,
-		Auth:    AuthConfig{Type: "bearer", TokenEnv: "EXHAUST_TOKEN"},
+		Auth:    AuthConfig{Type: AuthTypeBearer, TokenEnv: "EXHAUST_TOKEN"},
 		Endpoints: []Endpoint{
 			{Name: "get", Method: "GET", Path: "/data"},
 		},
@@ -178,7 +178,7 @@ func TestAPIClient_LimitEnforcement(t *testing.T) {
 	config := &APIConfig{
 		Name:    "limittest",
 		BaseURL: server.URL,
-		Auth:    AuthConfig{Type: "bearer", TokenEnv: "LIMIT_TOKEN"},
+		Auth:    AuthConfig{Type: AuthTypeBearer, TokenEnv: "LIMIT_TOKEN"},
 		Endpoints: []Endpoint{
 			{Name: "list", Method: "GET", Path: "/items"},
 		},
@@ -224,7 +224,7 @@ func TestAPIClient_RedactFields(t *testing.T) {
 	config := &APIConfig{
 		Name:    "redacttest",
 		BaseURL: server.URL,
-		Auth:    AuthConfig{Type: "bearer", TokenEnv: "REDACT_TOKEN"},
+		Auth:    AuthConfig{Type: AuthTypeBearer, TokenEnv: "REDACT_TOKEN"},
 		Endpoints: []Endpoint{
 			{Name: "get", Method: "GET", Path: "/data", RedactFields: []string{"email"}},
 		},

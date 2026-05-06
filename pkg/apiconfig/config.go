@@ -29,6 +29,12 @@ type APIConfig struct {
 	Headers     map[string]string `yaml:"headers"`
 }
 
+// Auth type constants.
+const (
+	AuthTypeBearer = "bearer"
+	AuthTypeHeader = "header"
+)
+
 // AuthConfig defines how to authenticate with the API.
 type AuthConfig struct {
 	Type     string `yaml:"type"`      // "bearer", "header", "none"

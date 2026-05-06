@@ -221,12 +221,12 @@ func (c *APIClient) doSingleRequest(ctx context.Context, fullURL string) (body [
 
 func (c *APIClient) applyAuth(req *http.Request) {
 	switch c.config.Auth.Type {
-	case "bearer":
+	case AuthTypeBearer:
 		token := os.Getenv(c.config.Auth.TokenEnv)
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
-	case "header":
+	case AuthTypeHeader:
 		token := os.Getenv(c.config.Auth.TokenEnv)
 		if token != "" {
 			header := c.config.Auth.Header
