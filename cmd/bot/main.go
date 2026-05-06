@@ -3,16 +3,15 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nikogura/diagnostic-slackbot/pkg/bot"
 	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
 	"github.com/nikogura/diagnostic-slackbot/pkg/mcp"
-	"github.com/nikogura/diagnostic-slackbot/pkg/mcp/auth"
 	"github.com/nikogura/diagnostic-slackbot/pkg/metrics"
 )
 
@@ -162,7 +161,6 @@ func parseFileRetention(logger *slog.Logger) (result time.Duration) {
 // startMCPHTTPServer starts the MCP HTTP server if MCP_HTTP_ENABLED is true.
 func startMCPHTTPServer(ctx context.Context, githubToken string, logger *slog.Logger) {
 	mcpHTTPEnabled := getEnv("MCP_HTTP_ENABLED", "false")
-	//nolint:goconst // "true" is a common boolean string, not worth a constant
 	if mcpHTTPEnabled != "true" {
 		return
 	}
@@ -177,117 +175,22 @@ func startMCPHTTPServer(ctx context.Context, githubToken string, logger *slog.Lo
 	}
 
 	lokiClient := k8s.NewLokiClient(lokiEndpoint, logger)
-	mcpServer := mcp.NewServer(lokiClient, githubToken, nil, logger)
-
-	// Build authentication chain from environment variables
-	authChain := buildAuthChain(logger)
+	legacyServer := mcp.NewServer(lokiClient, githubToken, nil, logger)
+	sdkServer := mcp.NewSDKServer(legacyServer)
 
 	go func() {
-		if authChain == nil {
-			logger.InfoContext(ctx, "starting MCP HTTP server without authentication", slog.String("addr", mcpHTTPAddr))
-		} else {
-			logger.InfoContext(ctx, "starting MCP HTTP server with authentication enabled", slog.String("addr", mcpHTTPAddr))
-		}
-		mcpErr := mcpServer.RunHTTP(ctx, mcpHTTPAddr, authChain)
-		if mcpErr != nil {
-			logger.ErrorContext(ctx, "MCP HTTP server error", slog.String("error", mcpErr.Error()))
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", sdkServer.StreamableHTTPHandler())
+		mux.Handle("/sse", sdkServer.SSEHandler())
+
+		logger.InfoContext(ctx, "starting MCP HTTP server",
+			slog.String("addr", mcpHTTPAddr),
+			slog.String("streamable_http", "/mcp"),
+			slog.String("sse", "/sse"))
+
+		httpErr := http.ListenAndServe(mcpHTTPAddr, mux)
+		if httpErr != nil {
+			logger.ErrorContext(ctx, "MCP HTTP server error", slog.String("error", httpErr.Error()))
 		}
 	}()
-}
-
-// buildAuthChain builds an authentication chain from environment variables.
-// Returns nil if no auth methods are configured (auth disabled).
-//
-//nolint:gocognit // Multiple auth methods require branching logic
-func buildAuthChain(logger *slog.Logger) (chain *auth.Chain) {
-	var methods []auth.Method
-
-	// 1. Static Bearer Token Auth
-	if token := getEnv("MCP_AUTH_TOKEN", ""); token != "" {
-		methods = append(methods, auth.NewStaticTokenAuth(token))
-		logger.Info("configured static bearer token authentication")
-	}
-
-	// 2. JWT Auth
-	if secret := getEnv("MCP_JWT_SECRET", ""); secret != "" {
-		algorithm := getEnv("MCP_JWT_ALGORITHM", "HS256")
-		jwtAuth, err := auth.NewJWTAuth(&auth.JWTConfig{
-			Secret:    []byte(secret),
-			Algorithm: algorithm,
-		})
-		if err != nil {
-			logger.Warn("failed to configure JWT auth", slog.String("error", err.Error()))
-		} else {
-			methods = append(methods, jwtAuth)
-			logger.Info("configured JWT authentication", slog.String("algorithm", algorithm))
-		}
-	}
-
-	// 3. API Key Auth
-	if apiKeysStr := getEnv("MCP_API_KEYS", ""); apiKeysStr != "" {
-		// Format: "key1:user1,key2:user2"
-		keys := make(map[string]string)
-		for _, pair := range strings.Split(apiKeysStr, ",") {
-			parts := strings.SplitN(strings.TrimSpace(pair), ":", 2)
-			if len(parts) == 2 {
-				keys[parts[0]] = parts[1]
-			}
-		}
-		if len(keys) > 0 {
-			methods = append(methods, auth.NewAPIKeyAuth(keys))
-			logger.Info("configured API key authentication", slog.Int("keys_count", len(keys)))
-		}
-	}
-
-	// 4. OIDC Auth
-	if issuerURL := getEnv("MCP_OIDC_ISSUER_URL", ""); issuerURL != "" {
-		audience := getEnv("MCP_OIDC_AUDIENCE", "")
-		allowedGroupsStr := getEnv("MCP_OIDC_ALLOWED_GROUPS", "")
-		skipIssuerVerify := getEnv("MCP_OIDC_SKIP_ISSUER_VERIFY", "false") == "true"
-
-		var allowedGroups []string
-		if allowedGroupsStr != "" {
-			allowedGroups = strings.Split(allowedGroupsStr, ",")
-			for i := range allowedGroups {
-				allowedGroups[i] = strings.TrimSpace(allowedGroups[i])
-			}
-		}
-
-		oidcAuth := auth.NewOIDCAuth(&auth.OIDCConfig{
-			IssuerURL:        issuerURL,
-			Audience:         audience,
-			AllowedGroups:    allowedGroups,
-			SkipIssuerVerify: skipIssuerVerify,
-		}, logger)
-		methods = append(methods, oidcAuth)
-		logger.Info("configured OIDC authentication",
-			slog.String("issuer_url", issuerURL),
-			slog.String("audience", audience),
-			slog.Any("allowed_groups", allowedGroups))
-	}
-
-	// 5. mTLS Auth
-	if caCertPath := getEnv("MCP_MTLS_CA_CERT_PATH", ""); caCertPath != "" {
-		verifyClient := getEnv("MCP_MTLS_VERIFY_CLIENT", "true") == "true"
-		mtlsAuth, err := auth.NewMTLSAuth(&auth.MTLSConfig{
-			CACertPath:   caCertPath,
-			VerifyClient: verifyClient,
-		})
-		if err != nil {
-			logger.Warn("failed to configure mTLS auth", slog.String("error", err.Error()))
-		} else {
-			methods = append(methods, mtlsAuth)
-			logger.Info("configured mTLS authentication",
-				slog.String("ca_cert_path", caCertPath),
-				slog.Bool("verify_client", verifyClient))
-		}
-	}
-
-	// Return nil if no methods configured (auth disabled)
-	if len(methods) == 0 {
-		return chain
-	}
-
-	chain = auth.NewChain(methods, logger)
-	return chain
 }

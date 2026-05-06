@@ -33,13 +33,16 @@ func main() {
 	// Load third-party API configs
 	apiToolRegistry := buildAPIToolRegistry(logger)
 
-	// Create MCP server
-	server := mcp.NewServer(lokiClient, githubToken, apiToolRegistry, logger)
+	// Create legacy server (holds all service clients and tool handlers)
+	legacyServer := mcp.NewServer(lokiClient, githubToken, apiToolRegistry, logger)
+
+	// Wrap with SDK server for Streamable HTTP and stdio transports
+	sdkServer := mcp.NewSDKServer(legacyServer)
 
 	// Run server (stdio transport)
 	ctx := context.Background()
 
-	err := server.Run(ctx)
+	err := sdkServer.RunStdio(ctx)
 	if err != nil {
 		logger.Error("MCP server error", slog.String("error", err.Error()))
 		os.Exit(1)

@@ -1,5 +1,9 @@
-# Build stage
-FROM golang:1.24-alpine AS builder
+# Build stage - pin to host arch for native compilation.
+# Go cross-compiles natively via GOOS/GOARCH — no QEMU needed.
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 
 # Install build dependencies
 RUN apk add --no-cache git make
@@ -17,8 +21,8 @@ RUN go mod download
 COPY . .
 
 # Build the binaries
-RUN go build -o /bin/diagnostic-slackbot ./cmd/bot
-RUN go build -o /bin/mcp-server ./cmd/mcp-server
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /bin/diagnostic-slackbot ./cmd/bot
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /bin/mcp-server ./cmd/mcp-server
 
 # Final stage
 FROM alpine:3.19
