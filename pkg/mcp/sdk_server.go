@@ -22,7 +22,7 @@ type SDKServer struct {
 // It registers all tools from the legacy server with the SDK's tool system.
 func NewSDKServer(legacy *Server) (result *SDKServer) {
 	mcpServer := sdkmcp.NewServer(&sdkmcp.Implementation{
-		Name:    "diagnostic-mcp",
+		Name:    "nikogura.com/diagnostic-bot",
 		Version: "0.2.0",
 	}, nil)
 

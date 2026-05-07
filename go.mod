@@ -1,4 +1,4 @@
-module github.com/nikogura/diagnostic-slackbot
+module github.com/nikogura/diagnostic-bot
 
 go 1.24.0
 
@@ -13,7 +13,6 @@ require (
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-github/v57 v57.0.0
-	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/liushuangls/go-anthropic/v2 v2.16.2
 	github.com/mattn/go-sqlite3 v1.14.33
@@ -54,6 +53,7 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/jsonschema-go v0.3.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

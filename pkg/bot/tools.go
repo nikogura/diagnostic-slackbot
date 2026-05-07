@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/apiconfig"
+	"github.com/nikogura/diagnostic-bot/pkg/apiconfig"
 )
 
 // ToolConfig captures which tool categories are available based on environment configuration.

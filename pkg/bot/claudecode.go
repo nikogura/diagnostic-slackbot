@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/investigations"
+	"github.com/nikogura/diagnostic-bot/pkg/investigations"
 )
 
 // ClaudeCodeRunner handles running Claude Code CLI for investigations.

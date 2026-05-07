@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/investigations"
+	"github.com/nikogura/diagnostic-bot/pkg/investigations"
 )
 
 // BuildSystemPrompt constructs the system prompt for Claude including the investigation

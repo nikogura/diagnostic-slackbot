@@ -7,7 +7,7 @@ import (
 	"log/slog"
 
 	anthropic "github.com/liushuangls/go-anthropic/v2"
-	"github.com/nikogura/diagnostic-slackbot/pkg/metrics"
+	"github.com/nikogura/diagnostic-bot/pkg/metrics"
 )
 
 const (

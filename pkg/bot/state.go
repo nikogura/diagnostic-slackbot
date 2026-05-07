@@ -5,7 +5,7 @@ import (
 	"time"
 
 	anthropic "github.com/liushuangls/go-anthropic/v2"
-	"github.com/nikogura/diagnostic-slackbot/pkg/investigations"
+	"github.com/nikogura/diagnostic-bot/pkg/investigations"
 )
 
 // ConversationState represents the state of a conversation.

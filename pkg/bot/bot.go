@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/investigations"
+	"github.com/nikogura/diagnostic-bot/pkg/investigations"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"

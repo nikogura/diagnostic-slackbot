@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v57/github"
-	"github.com/nikogura/diagnostic-slackbot/pkg/apiconfig"
-	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
+	"github.com/nikogura/diagnostic-bot/pkg/apiconfig"
+	"github.com/nikogura/diagnostic-bot/pkg/k8s"
 	"golang.org/x/oauth2"
 )
 
@@ -188,7 +188,7 @@ func (s *Server) sendServerInfo() {
 			Tools: map[string]interface{}{},
 		},
 		ServerInfo: ServerMetadata{
-			Name:    "diagnostic-mcp",
+			Name:    "nikogura.com/diagnostic-bot",
 			Version: "0.1.0",
 		},
 	}
@@ -225,7 +225,7 @@ func (s *Server) handleInitialize(_ context.Context, req MCPRequest) {
 				"tools": map[string]interface{}{},
 			},
 			"serverInfo": map[string]interface{}{
-				"name":    "diagnostic-mcp",
+				"name":    "nikogura.com/diagnostic-bot",
 				"version": "0.1.0",
 			},
 		},

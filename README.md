@@ -1,6 +1,6 @@
-# Diagnostic Slackbot
+# Diagnostic Bot
 
-A Slack bot that enables self-service production diagnostics by integrating Claude Code CLI with Kubernetes, Loki, and observability tools. The bot provides autonomous investigation capabilities through YAML-based templates and custom MCP tools, delivering professional PDF reports directly in Slack.
+A diagnostic automation platform that integrates Claude Code with Kubernetes, Loki, and observability tools. Provides autonomous investigation capabilities through YAML-based templates and custom MCP tools, delivering professional PDF reports. Includes a Slack bot for conversational access and an MCP server supporting both Streamable HTTP and SSE transports for use with Claude Code, Claude Desktop, OpenAI, Devin, and other MCP-compatible clients.
 
 ## Features
 
@@ -26,7 +26,7 @@ A Slack bot that enables self-service production diagnostics by integrating Clau
 ## Project Structure
 
 ```
-diagnostic-slackbot/
+diagnostic-bot/
 ├── cmd/
 │   ├── bot/main.go                  # Main Slack bot entry point
 │   └── mcp-server/main.go           # MCP server for Claude Code tools
@@ -55,9 +55,9 @@ diagnostic-slackbot/
 │   │   ├── redact.go                # PII field redaction from JSON responses
 │   │   └── tools.go                 # MCP tool generation and dispatch
 │   ├── mcp/                         # MCP server implementation
-│   │   ├── server.go                # MCP protocol, tool registration, and handlers
+│   │   ├── server.go                # Tool handlers and legacy protocol
+│   │   ├── sdk_server.go            # MCP SDK integration (Streamable HTTP + SSE + stdio)
 │   │   ├── types.go                 # MCP protocol types
-│   │   ├── http_server.go           # HTTP/SSE transport server
 │   │   ├── cloudwatch.go            # CloudWatch Logs tools
 │   │   ├── prometheus.go            # Prometheus/PromQL tools
 │   │   ├── grafana.go               # Grafana dashboard tools
@@ -342,7 +342,7 @@ For production deployment using Vault-backed secrets:
 
 2. **Store in Vault** (example for HashiCorp Vault):
    ```bash
-   vault kv put infra/diagnostic-slackbot-inv-myinvestigation \
+   vault kv put infra/diagnostic-bot-inv-myinvestigation \
      my-investigation.yaml=@investigations/my-investigation.yaml
    ```
 
@@ -351,20 +351,20 @@ For production deployment using Vault-backed secrets:
    apiVersion: secrets.hashicorp.com/v1beta1
    kind: VaultStaticSecret
    metadata:
-     name: diagnostic-slackbot-inv-myinvestigation
-     namespace: diagnostic-slackbot
+     name: diagnostic-bot-inv-myinvestigation
+     namespace: diagnostic-bot
    spec:
      type: kv-v2
      mount: infra
-     path: diagnostic-slackbot-inv-myinvestigation
+     path: diagnostic-bot-inv-myinvestigation
      destination:
-       name: diagnostic-slackbot-inv-myinvestigation
+       name: diagnostic-bot-inv-myinvestigation
        create: true
      refreshAfter: 30s
-     vaultAuthRef: diagnostic-slackbot
+     vaultAuthRef: diagnostic-bot
      rolloutRestartTargets:
        - kind: Deployment
-         name: diagnostic-slackbot
+         name: diagnostic-bot
    ```
 
 4. **Mount secret in Deployment**:
@@ -377,7 +377,7 @@ For production deployment using Vault-backed secrets:
    volumes:
      - name: inv-myinvestigation
        secret:
-         secretName: diagnostic-slackbot-inv-myinvestigation
+         secretName: diagnostic-bot-inv-myinvestigation
    ```
 
 5. **Apply with GitOps** - commit manifests and let Flux reconcile
@@ -477,13 +477,59 @@ See `pkg/bot/tools.go` for the env var detection logic and `pkg/mcp/server.go` f
 
 ### Architecture
 
-The MCP server has two transport modes:
+The MCP server supports three transports, all serving identical tools:
 
 1. **Stdio** (for Claude Code subprocess): Claude Code runs in `--print` mode, which does not load MCP servers registered via `claude mcp add`. Instead, the bot passes `--mcp-config` with the `/app/mcp-server` binary using stdio transport. This spawns a dedicated MCP server process per investigation.
 
-2. **HTTP/SSE** (for external clients): When `MCP_HTTP_ENABLED=true`, the bot starts a persistent HTTP/SSE server on the configured port (default 8090). This serves external MCP clients like IDE integrations or other services.
+2. **Streamable HTTP** (for external clients — recommended): When `MCP_HTTP_ENABLED=true`, the bot serves Streamable HTTP at `/mcp` on the configured port (default 8090). This is the current MCP standard (spec 2025-03-26) and is required by OpenAI, Devin, and Claude Desktop.
 
-Both transports use the same `Server` struct and tool implementations. The stdio binary and the HTTP server register identical tools based on the same environment configuration.
+3. **SSE** (legacy, for backward compatibility): Also served at `/sse` on the same port. Existing clients using SSE continue to work.
+
+### Connecting via `.mcp.json`
+
+To connect Claude Code (or other MCP clients) to a running instance, add a `.mcp.json` file to your project root:
+
+**Streamable HTTP (recommended):**
+```json
+{
+  "mcpServers": {
+    "diagnostic": {
+      "type": "http",
+      "url": "https://your-host:8090/mcp"
+    }
+  }
+}
+```
+
+**SSE (legacy):**
+```json
+{
+  "mcpServers": {
+    "diagnostic": {
+      "type": "sse",
+      "url": "https://your-host:8090/sse"
+    }
+  }
+}
+```
+
+**Both transports simultaneously:**
+```json
+{
+  "mcpServers": {
+    "diagnostic-http": {
+      "type": "http",
+      "url": "https://your-host:8090/mcp"
+    },
+    "diagnostic-sse": {
+      "type": "sse",
+      "url": "https://your-host:8090/sse"
+    }
+  }
+}
+```
+
+**Note:** For Claude Code, the transport type is `"http"` (not `"streamable-http"`). Both transports expose identical tools — use whichever your client supports.
 
 ## Configuration
 
@@ -551,7 +597,7 @@ auth:
   type: bearer                           # "bearer", "header", or "none"
   token_env: MY_API_TOKEN                # env var containing the auth token
 headers:                                 # optional custom headers
-  User-Agent: "diagnostic-slackbot/1.0"
+  User-Agent: "diagnostic-bot/1.0"
 rate_limit:
   max_concurrent: 5                      # semaphore size (default: 5)
   retry_on_429: true                     # honor Retry-After header (default: true)
@@ -710,7 +756,7 @@ Deploy as a Kubernetes Deployment with:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: diagnostic-slackbot
+  name: diagnostic-bot
 rules:
 - apiGroups: [""]
   resources: ["pods", "pods/log", "configmaps", "services"]
@@ -757,16 +803,16 @@ Docker images are automatically built and published to GitHub Container Registry
 
 ```bash
 # Pull latest image
-docker pull ghcr.io/nikogura/diagnostic-slackbot:latest
+docker pull ghcr.io/nikogura/diagnostic-bot:latest
 
 # Pull specific version
-docker pull ghcr.io/nikogura/diagnostic-slackbot:v1.0.0
+docker pull ghcr.io/nikogura/diagnostic-bot:v1.0.0
 
 # Run locally
 docker run -e SLACK_BOT_TOKEN=xoxb-... \
            -e SLACK_APP_TOKEN=xapp-... \
            -e ANTHROPIC_API_KEY=sk-... \
-           ghcr.io/nikogura/diagnostic-slackbot:latest
+           ghcr.io/nikogura/diagnostic-bot:latest
 ```
 
 ## CI/CD
@@ -780,7 +826,7 @@ The project uses GitHub Actions for continuous integration and deployment:
   - Binary build
   - Multi-arch Docker image build (amd64, arm64)
   - Security scanning with Trivy
-  - Publishes to `ghcr.io/nikogura/diagnostic-slackbot`
+  - Publishes to `ghcr.io/nikogura/diagnostic-bot`
 
 - **Release Pipeline** (`.github/workflows/release.yaml`):
   - Triggered on version tags (`v*`)

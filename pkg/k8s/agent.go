@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/metrics"
+	"github.com/nikogura/diagnostic-bot/pkg/metrics"
 )
 
 const (

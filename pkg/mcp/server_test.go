@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
+	"github.com/nikogura/diagnostic-bot/pkg/k8s"
 	"github.com/stretchr/testify/require"
 )
 

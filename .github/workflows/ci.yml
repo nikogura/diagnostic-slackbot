@@ -117,8 +117,8 @@ jobs:
         push: true
         platforms: linux/amd64,linux/arm64
         tags: |
-          ghcr.io/nikogura/diagnostic-slackbot:${{ needs.test.outputs.version_tag }}
-          ghcr.io/nikogura/diagnostic-slackbot:latest
+          ghcr.io/nikogura/diagnostic-bot:${{ needs.test.outputs.version_tag }}
+          ghcr.io/nikogura/diagnostic-bot:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
 

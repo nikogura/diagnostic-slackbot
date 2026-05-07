@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/bot"
-	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
-	"github.com/nikogura/diagnostic-slackbot/pkg/mcp"
-	"github.com/nikogura/diagnostic-slackbot/pkg/metrics"
+	"github.com/nikogura/diagnostic-bot/pkg/bot"
+	"github.com/nikogura/diagnostic-bot/pkg/k8s"
+	"github.com/nikogura/diagnostic-bot/pkg/mcp"
+	"github.com/nikogura/diagnostic-bot/pkg/metrics"
 )
 
 func main() {

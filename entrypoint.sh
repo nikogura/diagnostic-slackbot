@@ -18,4 +18,4 @@ claude mcp add --transport sse diagnostic http://localhost:8090/sse 2>/dev/null 
 echo "MCP HTTP/SSE server registered (server starts with main binary)"
 
 # Execute the main binary (which starts both Slack bot and HTTP MCP server)
-exec /app/diagnostic-slackbot "$@"
+exec /app/diagnostic-bot "$@"

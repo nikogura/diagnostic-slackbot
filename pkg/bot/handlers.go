@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/metrics"
+	"github.com/nikogura/diagnostic-bot/pkg/metrics"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )

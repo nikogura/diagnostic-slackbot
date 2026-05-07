@@ -328,8 +328,8 @@ Use **IRSA (IAM Roles for Service Accounts)** for credential management:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: diagnostic-slackbot
-  namespace: diagnostic-slackbot
+  name: diagnostic-bot
+  namespace: diagnostic-bot
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/diagnostic-bot-ecr-reader
 
@@ -337,11 +337,11 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: diagnostic-slackbot
+  name: diagnostic-bot
 spec:
   template:
     spec:
-      serviceAccountName: diagnostic-slackbot
+      serviceAccountName: diagnostic-bot
       containers:
       - name: bot
         env:
@@ -365,7 +365,7 @@ EXCLUDE_REPOS: "legacy-*,archived-*,test-*"
 Store the final template in Vault:
 
 ```bash
-vault kv put infra/diagnostic-slackbot-inv-ecr \
+vault kv put infra/diagnostic-bot-inv-ecr \
   ecr-vulnerability-scan.yaml=@investigations/ecr-vulnerability-scan.yaml
 ```
 

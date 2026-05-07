@@ -21,7 +21,7 @@ RUN go mod download
 COPY . .
 
 # Build the binaries
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /bin/diagnostic-slackbot ./cmd/bot
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /bin/diagnostic-bot ./cmd/bot
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /bin/mcp-server ./cmd/mcp-server
 
 # Final stage
@@ -58,7 +58,7 @@ RUN addgroup -g 1000 bot && \
 WORKDIR /app
 
 # Copy binaries from builder
-COPY --from=builder /bin/diagnostic-slackbot /app/diagnostic-slackbot
+COPY --from=builder /bin/diagnostic-bot /app/diagnostic-bot
 COPY --from=builder /bin/mcp-server /app/mcp-server
 
 # Investigation templates are mounted from Vault secrets at runtime
@@ -91,7 +91,7 @@ ENV INVESTIGATION_DIR=/app/investigations \
 
 # Health check (check if process is running)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD pgrep -f diagnostic-slackbot || exit 1
+    CMD pgrep -f diagnostic-bot || exit 1
 
 # Run the bot via entrypoint script
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/apiconfig"
-	"github.com/nikogura/diagnostic-slackbot/pkg/k8s"
-	"github.com/nikogura/diagnostic-slackbot/pkg/mcp"
+	"github.com/nikogura/diagnostic-bot/pkg/apiconfig"
+	"github.com/nikogura/diagnostic-bot/pkg/k8s"
+	"github.com/nikogura/diagnostic-bot/pkg/mcp"
 )
 
 func main() {

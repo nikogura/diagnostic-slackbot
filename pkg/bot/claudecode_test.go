@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nikogura/diagnostic-slackbot/pkg/investigations"
+	"github.com/nikogura/diagnostic-bot/pkg/investigations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
